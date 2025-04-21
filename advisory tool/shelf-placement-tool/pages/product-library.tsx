@@ -18,6 +18,7 @@ interface User {
   id: string;
   name: string;
   email: string;
+  isVerified?: boolean;
 }
 
 export default function ProductLibrary() {
@@ -30,22 +31,62 @@ export default function ProductLibrary() {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
 
-//   useEffect(() => {
-//     // Check if user is logged in
-//     const userData = localStorage.getItem("user");
-//     if (!userData) {
-//       router.push("/user-login");
-//       return;
-//     }
+  // Google Apps Script web app URL
+  const API_URL = "https://script.google.com/macros/s/AKfycby3_qfj9512USbRiYqAkYf6191xrsAAmDu36qizGtAsI2HE6F6vd6KJCPAqvtAXRMQv/exec";
+
+  useEffect(() => {
+    // Check if user is logged in
+    const userData = localStorage.getItem("user");
+    if (!userData) {
+      router.push("/user-login");
+      return;
+    }
     
-//     setUser(JSON.parse(userData));
-//     fetchProducts();
-//   }, []);
+    const parsedUserData = JSON.parse(userData);
+    
+    // Check if user's email is verified
+    if (!parsedUserData.isVerified) {
+      router.push("/verify-email");
+      return;
+    }
+    
+    setUser(parsedUserData);
+    fetchProducts();
+  }, [router]);
 
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      // Retrieve products from localStorage
+      // Try to fetch products from the API first
+      try {
+        const response = await fetch(`${API_URL}?action=getProducts`);
+        const data = await response.json();
+        
+        if (data && data.length > 1) { // Skip header row
+          // Transform API data format to match our interface
+          const apiProducts = data.slice(1).map((item: any, index: number) => ({
+            id: `api_product_${index}`,
+            name: item[0] || '',
+            category: item[1] || '',
+            price: item[2] || 0,
+            margin: item[3] || 0,
+            size: item[4] || '',
+            buyingDecision: item[5] || '',
+            demand: item[6] || '',
+            createdAt: new Date().toISOString().split('T')[0]
+          }));
+          
+          setProducts(apiProducts);
+          // Also store in localStorage
+          localStorage.setItem("products", JSON.stringify(apiProducts));
+          return;
+        }
+      } catch (error) {
+        console.error("Error fetching products from API:", error);
+        // Continue with localStorage fallback
+      }
+      
+      // Retrieve products from localStorage as fallback
       const storedProducts = localStorage.getItem("products");
       if (storedProducts) {
         setProducts(JSON.parse(storedProducts));
@@ -114,7 +155,7 @@ export default function ProductLibrary() {
   };
 
   const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = product.name.toString().toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory ? product.category === selectedCategory : true;
     return matchesSearch && matchesCategory;
   });
@@ -162,7 +203,7 @@ export default function ProductLibrary() {
             <ul>
               <li><a href="/dashboard">My Shelves</a></li>
               <li className="active"><a href="/product-library">Product Library</a></li>
-              <li><a href="/analytics">Analytics</a></li>
+              <li><a href="/store-insights">Store Insights</a></li>
             </ul>
           </nav>
         </aside>
