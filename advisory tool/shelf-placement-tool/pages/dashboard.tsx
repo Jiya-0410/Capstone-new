@@ -9,10 +9,40 @@ interface User {
   isVerified: boolean;
 }
 
+interface Product {
+  id: string;
+  name: string;
+  category: string;
+  price: number | string;
+  margin: number | string;
+  size: string;
+  buyingDecision: string;
+  demand: string;
+  slot: number;
+}
+
+interface Shelf {
+  id: string;
+  name: string;
+  location: string;
+  userId: string;
+  userName: string;
+  createdAt: string;
+  products: Product[];
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userShelves, setUserShelves] = useState<Shelf[]>([]);
+  const [recentProducts, setRecentProducts] = useState<Product[]>([]);
+  const [stats, setStats] = useState({
+    totalProducts: 0,
+    totalShelves: 0,
+    avgProductsPerShelf: 0,
+    mostUsedProduct: ""
+  });
 
   useEffect(() => {
     // Check if user is logged in
@@ -22,17 +52,100 @@ export default function Dashboard() {
       return;
     }
 
-    const parsedUser = JSON.parse(userData);
-    
-    // Check if user is verified
-    if (!parsedUser.isVerified) {
-      router.push("/verify-email");
-      return;
+    try {
+      const parsedUser = JSON.parse(userData);
+      
+      // Check if user is verified
+      if (!parsedUser.isVerified) {
+        router.push("/verify-email");
+        return;
+      }
+      
+      setUser(parsedUser);
+      
+      // Load user's shelves
+      loadUserShelves(parsedUser.id);
+      
+      // Load recent products
+      loadRecentProducts();
+      
+    } catch (error) {
+      console.error("Error parsing user data:", error);
+      console.error("Error parsing user data:", error);
+      router.push("/user-login");
+    } finally {
+      setLoading(false);
     }
-    
-    setUser(parsedUser);
-    setLoading(false);
   }, [router]);
+
+  const loadUserShelves = (userId: string) => {
+    try {
+      // Get all shelves from localStorage
+      const allShelves = JSON.parse(localStorage.getItem("shelves") || "[]");
+      
+      // Filter shelves for current user
+      const filteredShelves = allShelves.filter((shelf: Shelf) => shelf.userId === userId);
+      
+      setUserShelves(filteredShelves);
+      
+      // Calculate stats
+      if (filteredShelves.length > 0) {
+        const totalProducts = filteredShelves.reduce((sum: number, shelf: Shelf) => 
+          sum + (shelf.products?.length || 0), 0);
+          
+        const avgProducts = totalProducts / filteredShelves.length;
+        
+        // Find most used product
+        const productCounts: Record<string, number> = {};
+        filteredShelves.forEach((shelf: Shelf) => {
+          shelf.products?.forEach(product => {
+            productCounts[product.name] = (productCounts[product.name] || 0) + 1;
+          });
+        });
+        
+        let mostUsedProduct = "";
+        let maxCount = 0;
+        
+        for (const [name, count] of Object.entries(productCounts)) {
+          if (count > maxCount) {
+            maxCount = count;
+            mostUsedProduct = name;
+          }
+        }
+        
+        setStats({
+          totalProducts,
+          totalShelves: filteredShelves.length,
+          avgProductsPerShelf: avgProducts,
+          mostUsedProduct
+        });
+      }
+    } catch (error) {
+      console.error("Error loading shelves:", error);
+    }
+  };
+
+  const loadRecentProducts = () => {
+    try {
+      // Get all products from localStorage
+      const allProducts = JSON.parse(localStorage.getItem("products") || "[]");
+      
+      // Sort by most recently added (assuming newer products are at the end of the array)
+      const sortedProducts = [...allProducts].reverse().slice(0, 5);
+      
+      setRecentProducts(sortedProducts);
+    } catch (error) {
+      console.error("Error loading products:", error);
+    }
+  };
+
+  const handleCreateNewShelf = () => {
+    router.push("/grid-selection");
+  };
+
+  const handleViewShelf = (shelfId: string) => {
+    router.push(`/shelf-detail?id=${shelfId}`);
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("user");
@@ -89,13 +202,13 @@ export default function Dashboard() {
                 <a href="#">Dashboard</a>
               </li>
               <li>
-                <a href="#">Products</a>
+                <a href="/product-library">Products</a>
               </li>
               <li>
-                <a href="#">Store Layout</a>
+                <a href="/grid-selection">Create Shelf</a>
               </li>
               <li>
-                <a href="#">Analytics</a>
+                <a href="/store-insights">Store Insights</a>
               </li>
               <li>
                 <a href="#">Settings</a>
@@ -126,121 +239,154 @@ export default function Dashboard() {
           
           <div className="dashboard-stats">
             <div className="stat-card">
-              <h3>Products</h3>
-              <div className="stat-value">245</div>
-              <p>↑ 12% from last month</p>
+              <h3>Total Shelves</h3>
+              <div className="stat-value">{stats.totalShelves}</div>
+              <p className="stat-label">Your created shelves</p>
             </div>
             <div className="stat-card">
-              <h3>Revenue</h3>
-              <div className="stat-value">$15,245</div>
-              <p>↑ 8% from last month</p>
+              <h3>Total Products</h3>
+              <div className="stat-value">{stats.totalProducts}</div>
+              <p className="stat-label">Placed on shelves</p>
             </div>
             <div className="stat-card">
-              <h3>Profit</h3>
-              <div className="stat-value">$5,432</div>
-              <p>↑ 5% from last month</p>
+              <h3>Avg Products/Shelf</h3>
+              <div className="stat-value">{stats.avgProductsPerShelf.toFixed(1)}</div>
+              <p className="stat-label">Product density</p>
             </div>
             <div className="stat-card">
-              <h3>Customer Traffic</h3>
-              <div className="stat-value">2,450</div>
-              <p>↑ 18% from last month</p>
+              <h3>Most Used Product</h3>
+              <div className="stat-value">{stats.mostUsedProduct || "N/A"}</div>
+              <p className="stat-label">Across all shelves</p>
+            </div>
+          </div>
+          
+          {/* User Shelves Section */}
+          <div className="shelves-section">
+            <div className="section-header">
+              <h2>My Shelves</h2>
+              <button onClick={handleCreateNewShelf} className="add-shelf-button">+ Create New Shelf</button>
+            </div>
+            
+            <div className="shelves-grid">
+              {userShelves.length === 0 ? (
+                <div className="empty-shelves">
+                  <div className="empty-icon">📚</div>
+                  <h3>No shelves created yet</h3>
+                  <p>Create your first shelf to start optimizing product placement</p>
+                  <button onClick={handleCreateNewShelf} className="create-first-button">
+                    Create Your First Shelf
+                  </button>
+                </div>
+              ) : (
+                userShelves.map((shelf) => (
+                  <div key={shelf.id} className="shelf-card" onClick={() => handleViewShelf(shelf.id)}>
+                    <div className="shelf-header">
+                      <h3>{shelf.name || "Unnamed Shelf"}</h3>
+                      <span className="product-count">{shelf.products?.length || 0} products</span>
+                    </div>
+                    <div className="shelf-preview">
+                      <div className="grid-preview">
+                        {/* 5x5 grid preview */}
+                        {Array(25).fill(null).map((_, i) => (
+                          <div key={i} className="grid-cell" style={{
+                            backgroundColor: shelf.products?.some(p => p.slot === i) ? '#8b6f47' : '#e0c9a7'
+                          }}></div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="shelf-footer">
+                      <span>Created: {shelf.createdAt || 'Recently'}</span>
+                      <span>Location: {shelf.location || 'Main Store'}</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
           
           <div className="dashboard-panels">
             <div className="panel">
               <h3>Recent Products</h3>
-              <table className="product-table">
-                <thead>
-                  <tr>
-                    <th>Product Name</th>
-                    <th>Category</th>
-                    <th>Price</th>
-                    <th>Demand</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Colgate Toothpaste</td>
-                    <td>Health</td>
-                    <td>$3.22</td>
-                    <td><span className="high-demand">High</span></td>
-                  </tr>
-                  <tr>
-                    <td>Nike T-Shirt</td>
-                    <td>Fashion</td>
-                    <td>$54.00</td>
-                    <td><span className="high-demand">High</span></td>
-                  </tr>
-                  <tr>
-                    <td>Adidas Shoes</td>
-                    <td>Fashion</td>
-                    <td>$54.00</td>
-                    <td><span className="high-demand">High</span></td>
-                  </tr>
-                  <tr>
-                    <td>Tennis Racket</td>
-                    <td>Sports</td>
-                    <td>$34.00</td>
-                    <td><span className="high-demand">High</span></td>
-                  </tr>
-                  <tr>
-                    <td>Chocolate Bar</td>
-                    <td>Food</td>
-                    <td>$8.00</td>
-                    <td><span className="high-demand">High</span></td>
-                  </tr>
-                </tbody>
-              </table>
+              {recentProducts.length === 0 ? (
+                <div className="no-products">
+                  <p>No products added yet</p>
+                  <button 
+                    onClick={() => router.push("/product-entry")}
+                    className="add-product-button"
+                  >
+                    Add New Product
+                  </button>
+                </div>
+              ) : (
+                <table className="product-table">
+                  <thead>
+                    <tr>
+                      <th>Product Name</th>
+                      <th>Category</th>
+                      <th>Price</th>
+                      <th>Demand</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentProducts.map((product) => (
+                      <tr key={product.id}>
+                        <td>{product.name}</td>
+                        <td>{product.category}</td>
+                        <td>${typeof product.price === 'number' ? product.price.toFixed(2) : product.price}</td>
+                        <td>
+                          <span className={`${product.demand?.toLowerCase()}-demand`}>
+                            {product.demand}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div className="panel-footer">
+                <button 
+                  onClick={() => router.push("/product-library")}
+                  className="view-all-button"
+                >
+                  View All Products
+                </button>
+              </div>
             </div>
             
             <div className="panel">
-              <h3>Top Performing Stores</h3>
-              <div className="store-list">
-                <div className="store-item">
-                  <div className="store-info">
-                    <h4>Store D</h4>
-                    <p>Sales: $6,000</p>
-                  </div>
-                  <div className="store-progress">
-                    <div className="progress-bar" style={{ width: '85%' }}></div>
-                  </div>
+              <h3>Quick Actions</h3>
+              <div className="action-cards">
+                <div 
+                  className="action-card"
+                  onClick={() => router.push("/grid-selection")}
+                >
+                  <div className="action-icon">📊</div>
+                  <h4>Create New Shelf</h4>
+                  <p>Design a new 5×5 shelf layout</p>
                 </div>
-                <div className="store-item">
-                  <div className="store-info">
-                    <h4>Store A</h4>
-                    <p>Sales: $5,000</p>
-                  </div>
-                  <div className="store-progress">
-                    <div className="progress-bar" style={{ width: '80%' }}></div>
-                  </div>
+                <div 
+                  className="action-card"
+                  onClick={() => router.push("/product-entry")}
+                >
+                  <div className="action-icon">📦</div>
+                  <h4>Add New Product</h4>
+                  <p>Add a new product to your library</p>
                 </div>
-                <div className="store-item">
-                  <div className="store-info">
-                    <h4>Store E</h4>
-                    <p>Sales: $4,000</p>
-                  </div>
-                  <div className="store-progress">
-                    <div className="progress-bar" style={{ width: '55%' }}></div>
-                  </div>
+                <div 
+                  className="action-card"
+                  onClick={() => router.push("/store-insights")}
+                >
+                  <div className="action-icon">📈</div>
+                  <h4>View Store Insights</h4>
+                  <p>Analyze store performance data</p>
                 </div>
-                <div className="store-item">
-                  <div className="store-info">
-                    <h4>Store B</h4>
-                    <p>Sales: $3,500</p>
-                  </div>
-                  <div className="store-progress">
-                    <div className="progress-bar" style={{ width: '60%' }}></div>
-                  </div>
-                </div>
-                <div className="store-item">
-                  <div className="store-info">
-                    <h4>Store C</h4>
-                    <p>Sales: $2,000</p>
-                  </div>
-                  <div className="store-progress">
-                    <div className="progress-bar" style={{ width: '30%' }}></div>
-                  </div>
+                <div 
+                  className="action-card"
+                  onClick={() => router.push("/product-library")}
+                >
+                  <div className="action-icon">🔍</div>
+                  <h4>Browse Products</h4>
+                  <p>View and manage your product library</p>
                 </div>
               </div>
             </div>
@@ -386,7 +532,7 @@ export default function Dashboard() {
           
           .dashboard-stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
           }
@@ -410,12 +556,157 @@ export default function Dashboard() {
             color: #6b4f35;
             font-weight: bold;
             margin-bottom: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
           
-          .stat-card p {
+          .stat-label {
             margin: 0;
-            color: #388e3c;
+            color: #6b4f35;
             font-size: 0.9rem;
+            opacity: 0.7;
+          }
+          
+          /* Shelves Section */
+          .shelves-section {
+            margin-bottom: 30px;
+          }
+          
+          .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+          }
+          
+          .section-header h2 {
+            color: #6b4f35;
+            margin: 0;
+            font-size: 1.5rem;
+          }
+          
+          .add-shelf-button {
+            background: #8b6f47;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+          }
+          
+          .add-shelf-button:hover {
+            background: #7a5d3a;
+          }
+          
+          .shelves-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+          }
+          
+          .shelf-card {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+          }
+          
+          .shelf-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+          }
+          
+          .shelf-header {
+            background: #e0c9a7;
+            color: #6b4f35;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          
+          .shelf-header h3 {
+            margin: 0;
+            font-size: 1.2rem;
+          }
+          
+          .product-count {
+            background: rgba(139, 111, 71, 0.2);
+            color: #6b4f35;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+          }
+          
+          .shelf-preview {
+            padding: 20px;
+            background: #f8f4ef;
+          }
+          
+          .grid-preview {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 3px;
+            aspect-ratio: 1/1;
+          }
+          
+          .grid-cell {
+            border-radius: 2px;
+          }
+          
+          .shelf-footer {
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: #7d6450;
+            border-top: 1px solid #f0e6d9;
+          }
+          
+          .empty-shelves {
+            grid-column: 1 / -1;
+            background: white;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+          }
+          
+          .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+          }
+          
+          .empty-shelves h3 {
+            color: #6b4f35;
+            margin-bottom: 10px;
+            font-size: 1.3rem;
+          }
+          
+          .empty-shelves p {
+            color: #7d6450;
+            margin-bottom: 20px;
+          }
+          
+          .create-first-button {
+            background: #8b6f47;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+          }
+          
+          .create-first-button:hover {
+            background: #7a5d3a;
           }
           
           .dashboard-panels {
@@ -463,49 +754,106 @@ export default function Dashboard() {
             font-weight: bold;
           }
           
-          .store-list {
-            display: flex;
-            flex-direction: column;
+          .medium-demand {
+            color: #f57c00;
+            background: rgba(245, 124, 0, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: bold;
+          }
+          
+          .low-demand {
+            color: #757575;
+            background: rgba(117, 117, 117, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: bold;
+          }
+          
+          .seasonal-demand {
+            color: #7e57c2;
+            background: rgba(126, 87, 194, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: bold;
+          }
+          
+          .no-products {
+            text-align: center;
+            padding: 20px 0;
+            color: #7d6450;
+          }
+          
+          .add-product-button {
+            background: #8b6f47;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            cursor: pointer;
+            font-weight: bold;
+          }
+          
+          .panel-footer {
+            margin-top: 15px;
+            text-align: center;
+          }
+          
+          .view-all-button {
+            background: transparent;
+            color: #8b6f47;
+            border: 1px solid #8b6f47;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+          }
+          
+          .view-all-button:hover {
+            background: #8b6f47;
+            color: white;
+          }
+          
+          .action-cards {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
             gap: 15px;
           }
           
-          .store-item {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+          .action-card {
+            background: #f8f4ef;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.3s, background 0.3s;
           }
           
-          .store-info {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+          .action-card:hover {
+            transform: translateY(-5px);
+            background: #f0e6d9;
           }
           
-          .store-info h4 {
-            margin: 0;
+          .action-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+          }
+          
+          .action-card h4 {
+            margin: 0 0 5px;
             color: #6b4f35;
             font-size: 1rem;
           }
           
-          .store-info p {
+          .action-card p {
             margin: 0;
-            color: #6b4f35;
-            opacity: 0.7;
-            font-size: 0.9rem;
-          }
-          
-          .store-progress {
-            width: 100%;
-            height: 8px;
-            background: #f0f0f0;
-            border-radius: 4px;
-            overflow: hidden;
-          }
-          
-          .progress-bar {
-            height: 100%;
-            background: #8b6f47;
-            border-radius: 4px;
+            color: #7d6450;
+            font-size: 0.85rem;
           }
           
           @media (max-width: 1024px) {
@@ -530,6 +878,10 @@ export default function Dashboard() {
             }
             
             .dashboard-stats {
+              grid-template-columns: 1fr;
+            }
+            
+            .action-cards {
               grid-template-columns: 1fr;
             }
           }

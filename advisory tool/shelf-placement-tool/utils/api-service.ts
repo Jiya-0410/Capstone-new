@@ -1,12 +1,12 @@
-// api-service.ts - Updated API Service with improved CORS handling
+// api-service.ts
 
-// The deployment URL for the Google Apps Script
-const API_URL = "https://script.google.com/macros/s/AKfycbzQRd97bQ35X5nK2kGkMZiAnFnHoQBcGd3RaaJiDws6T7fiwhuD7kA9FV0YU7fvUXRk/exec";
+// ✅ Deployment URL of your Google Apps Script endpoint
+const API_URL = "https://script.google.com/macros/s/AKfycbyOQraXDIXxTtPdZsSqw5zH50zh0-oAdOhgIakAK9HznoHsIqxMffA-nU88CYcfC1US/exec";
 
-// Set to true during development to bypass actual API calls
-const DEVELOPMENT_MODE = true; // Set to true for testing, change to false for production
+// ✅ Toggle this for mocking instead of real API
+const DEVELOPMENT_MODE = false;
 
-// Helper function to handle API errors with more detailed logging
+// ✅ Central error handler
 const handleApiError = (error: any) => {
   console.error("API Error Details:", error);
   return {
@@ -15,56 +15,48 @@ const handleApiError = (error: any) => {
   };
 };
 
-// Helper function for making API requests
+// ✅ API request handler
 const makeApiRequest = async (action: string, data: any = {}) => {
   if (DEVELOPMENT_MODE) {
-    console.log(`Development mode: ${action} bypassed with mock data`);
+    console.log(`Development mode: ${action} mock response`);
     return getMockResponse(action, data);
   }
 
   try {
-    console.log(`Sending ${action} request with data:`, data);
-    
-    // Add the action to the data
     const requestData = { ...data, action };
-    
-    // For GET requests
+
     if (action === "checkApiStatus") {
       const response = await fetch(`${API_URL}?action=${action}`, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        }
+        headers: { "Content-Type": "application/json" }
       });
-      
+
       const result = await response.json();
       console.log(`Received ${action} response:`, result);
       return result;
     }
-    
-    // For POST requests
+
     const response = await fetch(API_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestData),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestData)
     });
-    
+
     const result = await response.json();
     console.log(`Received ${action} response:`, result);
     return result;
+
   } catch (error) {
     return handleApiError(error);
   }
 };
 
-// Generate mock responses for development mode
+// ✅ Development mock data
 const getMockResponse = (action: string, data: any) => {
   switch (action) {
     case "checkApiStatus":
       return { success: true, message: "API is running", version: "1.0.1" };
-      
+
     case "userSignup":
       return {
         success: true,
@@ -77,7 +69,7 @@ const getMockResponse = (action: string, data: any) => {
         },
         token: "mock-verification-token"
       };
-      
+
     case "userLogin":
       return {
         success: true,
@@ -89,29 +81,7 @@ const getMockResponse = (action: string, data: any) => {
           isVerified: true
         }
       };
-      
-    case "adminSignup":
-      return {
-        success: true,
-        message: "Admin account created successfully. You can now log in.",
-        admin: {
-          id: "mock-admin-id",
-          name: data.name,
-          email: data.email
-        }
-      };
-      
-    case "adminLogin":
-      return {
-        success: true,
-        message: "Admin login successful",
-        admin: {
-          id: "mock-admin-id",
-          name: "Admin User",
-          email: data.email
-        }
-      };
-      
+
     case "verifyEmail":
       return {
         success: true,
@@ -123,80 +93,89 @@ const getMockResponse = (action: string, data: any) => {
           isVerified: true
         }
       };
-      
+
     case "resendVerificationCode":
       return {
         success: true,
         message: "A new verification code has been sent to your email.",
         token: "mock-verification-token"
       };
-      
+
     case "forgotPassword":
       return {
         success: true,
         message: "Password reset instructions sent to your email",
         token: "mock-reset-token"
       };
-      
+
     case "resetPassword":
       return {
         success: true,
         message: "Password reset successfully. You can now log in with your new password."
       };
-      
+
+    case "adminSignup":
+      return {
+        success: true,
+        message: "Admin account created successfully. You can now log in.",
+        admin: {
+          id: "mock-admin-id",
+          name: data.name,
+          email: data.email
+        }
+      };
+
+    case "adminLogin":
+      return {
+        success: true,
+        message: "Admin login successful",
+        admin: {
+          id: "mock-admin-id",
+          name: "Admin User",
+          email: data.email
+        }
+      };
+
     default:
       return { success: false, message: "Unknown action in development mode" };
   }
 };
 
-// API Service object with methods for different API calls
+// ✅ Exportable API service
 const ApiService = {
-  // Test the API connection
-  checkApiStatus: async () => {
-    return await makeApiRequest("checkApiStatus");
-  },
+  checkApiStatus: async () => await makeApiRequest("checkApiStatus"),
 
-  // User authentication
-  userSignup: async (name: string, email: string, password: string) => {
-    return await makeApiRequest("userSignup", { name, email, password });
-  },
+  // User
+  userSignup: async (name: string, email: string, password: string) =>
+    await makeApiRequest("userSignup", { name, email, password }),
 
-  userLogin: async (email: string, password: string) => {
-    return await makeApiRequest("userLogin", { email, password });
-  },
+  userLogin: async (email: string, password: string) =>
+    await makeApiRequest("userLogin", { email, password }),
 
-  verifyEmail: async (token: string) => {
-    return await makeApiRequest("verifyEmail", { token });
-  },
+  verifyEmail: async (token: string) =>
+    await makeApiRequest("verifyEmail", { token }),
 
-  resendVerificationCode: async (email: string) => {
-    return await makeApiRequest("resendVerificationCode", { email });
-  },
+  resendVerificationCode: async (email: string) =>
+    await makeApiRequest("resendVerificationCode", { email }),
 
-  userForgotPassword: async (email: string) => {
-    return await makeApiRequest("forgotPassword", { email, isAdmin: false });
-  },
+  userForgotPassword: async (email: string) =>
+    await makeApiRequest("forgotPassword", { email, isAdmin: false }),
 
-  userResetPassword: async (email: string, token: string, newPassword: string) => {
-    return await makeApiRequest("resetPassword", { email, token, newPassword, isAdmin: false });
-  },
+  userResetPassword: async (email: string, token: string, newPassword: string) =>
+    await makeApiRequest("resetPassword", { email, token, newPassword, isAdmin: false }),
 
-  // Admin authentication
-  adminSignup: async (name: string, email: string, password: string, adminCode: string) => {
-    return await makeApiRequest("adminSignup", { name, email, password, adminCode });
-  },
+  // Admin
+  adminSignup: async (name: string, email: string, password: string, adminCode: string) =>
+    await makeApiRequest("adminSignup", { name, email, password, adminCode }),
 
-  adminLogin: async (email: string, password: string) => {
-    return await makeApiRequest("adminLogin", { email, password });
-  },
+  adminLogin: async (email: string, password: string) =>
+    await makeApiRequest("adminLogin", { email, password }),
 
-  adminForgotPassword: async (email: string) => {
-    return await makeApiRequest("forgotPassword", { email, isAdmin: true });
-  },
+  adminForgotPassword: async (email: string) =>
+    await makeApiRequest("forgotPassword", { email, isAdmin: true }),
 
-  adminResetPassword: async (email: string, token: string, newPassword: string) => {
-    return await makeApiRequest("resetPassword", { email, token, newPassword, isAdmin: true });
-  }
+  adminResetPassword: async (email: string, token: string, newPassword: string) =>
+    await makeApiRequest("resetPassword", { email, token, newPassword, isAdmin: true })
 };
 
 export default ApiService;

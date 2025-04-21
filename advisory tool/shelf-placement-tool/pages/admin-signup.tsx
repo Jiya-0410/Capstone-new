@@ -169,7 +169,7 @@ export default function AdminSignup() {
             />
             <div className="admin-code-hint">
               <p>You need a valid admin authorization code to create an admin account.</p>
-              <p>Default code for testing: admin123</p>
+              <p>Default code for testing: secretAdminCode123</p>
             </div>
             {error && <div className="error-message">{error}</div>}
             <button 

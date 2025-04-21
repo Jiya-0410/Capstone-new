@@ -85,14 +85,23 @@ export default function UserSignup() {
       console.log("Signup response:", data);
       
       if (data.success) {
+        // Create a default user object if not provided by API
+        const userObject = data.user || {
+          id: "temp-" + Date.now(),
+          name: credentials.name,
+          email: credentials.email,
+          isVerified: false
+        };
+        
         // Store user data in localStorage
-        localStorage.setItem("user", JSON.stringify(data.user));
+        localStorage.setItem("user", JSON.stringify(userObject));
         
         // Show success message
         alert(data.message);
         
         // Redirect to verification page if email needs verification
-        if (!data.user.isVerified) {
+        // Check if user object exists and isVerified property is defined
+        if (userObject && userObject.isVerified === false) {
           router.push("/verify-email");
         } else {
           router.push("/dashboard");

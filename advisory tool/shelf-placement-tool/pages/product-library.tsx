@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
+import Head from "next/head";
+import axios from "axios";
 
 // Define types
 interface Product {
@@ -32,7 +34,7 @@ export default function ProductLibrary() {
   const [selectedCategory, setSelectedCategory] = useState<string>("");
 
   // Google Apps Script web app URL
-  const API_URL = "https://script.google.com/macros/s/AKfycby3_qfj9512USbRiYqAkYf6191xrsAAmDu36qizGtAsI2HE6F6vd6KJCPAqvtAXRMQv/exec";
+  const API_URL = "https://script.google.com/macros/s/AKfycbwyLQGdV5eUAtrKthcXcIZg5-Ux7M6LipVbsM5IRmr7uLu8VQY5sCjJ1YMMiv5dsyrX/exec";
 
   useEffect(() => {
     // Check if user is logged in
@@ -42,16 +44,21 @@ export default function ProductLibrary() {
       return;
     }
     
-    const parsedUserData = JSON.parse(userData);
-    
-    // Check if user's email is verified
-    if (!parsedUserData.isVerified) {
-      router.push("/verify-email");
-      return;
+    try {
+      const parsedUserData = JSON.parse(userData);
+      
+      // Check if user's email is verified
+      if (!parsedUserData.isVerified) {
+        router.push("/verify-email");
+        return;
+      }
+      
+      setUser(parsedUserData);
+      fetchProducts();
+    } catch (error) {
+      console.error("Error checking user data:", error);
+      router.push("/user-login");
     }
-    
-    setUser(parsedUserData);
-    fetchProducts();
   }, [router]);
 
   const fetchProducts = async () => {
@@ -59,12 +66,11 @@ export default function ProductLibrary() {
     try {
       // Try to fetch products from the API first
       try {
-        const response = await fetch(`${API_URL}?action=getProducts`);
-        const data = await response.json();
+        const response = await axios.get(`${API_URL}?action=getProducts`);
         
-        if (data && data.length > 1) { // Skip header row
+        if (response.data && response.data.success && response.data.data && response.data.data.length > 1) {
           // Transform API data format to match our interface
-          const apiProducts = data.slice(1).map((item: any, index: number) => ({
+          const apiProducts = response.data.data.slice(1).map((item: any, index: number) => ({
             id: `api_product_${index}`,
             name: item[0] || '',
             category: item[1] || '',
@@ -77,8 +83,9 @@ export default function ProductLibrary() {
           }));
           
           setProducts(apiProducts);
-          // Also store in localStorage
+          // Also store in localStorage for offline use
           localStorage.setItem("products", JSON.stringify(apiProducts));
+          setLoading(false);
           return;
         }
       } catch (error) {
@@ -103,16 +110,15 @@ export default function ProductLibrary() {
   };
 
   const handleAddNewProduct = () => {
-    // Remove any shelf context for new product
-    localStorage.removeItem("currentShelfId");
+    // Clear any existing edit context
     localStorage.removeItem("editProductId");
+    localStorage.removeItem("currentShelfId");
     router.push("/product-entry");
   };
 
   const handleEditProduct = (product: Product) => {
     // Store product ID for the product entry page
     localStorage.setItem("editProductId", product.id);
-    localStorage.removeItem("currentShelfId");
     router.push("/product-entry");
   };
 
@@ -162,14 +168,14 @@ export default function ProductLibrary() {
 
   const getCategoryColor = (category: string) => {
     const colors: {[key: string]: string} = {
-      fashion: "#e91e63",
-      food: "#ff9800",
-      health: "#4caf50",
-      beauty: "#9c27b0",
-      home: "#2196f3",
-      sports: "#f44336",
-      travel: "#009688",
-      default: "#757575"
+      "Fashion": "#e91e63",
+      "Food": "#ff9800",
+      "Health": "#4caf50",
+      "Beauty": "#9c27b0",
+      "Home": "#2196f3",
+      "Sports": "#f44336",
+      "Electronics": "#00bcd4",
+      "default": "#757575"
     };
     
     return colors[category] || colors.default;
@@ -183,542 +189,661 @@ export default function ProductLibrary() {
   const uniqueCategories = [...new Set(products.map(product => product.category))].filter(Boolean);
 
   return (
-    <div className="product-library-container">
-      {/* Header with user info */}
-      <header className="dashboard-header">
-        <div className="logo-section">
-          <h1>Advisory Tool</h1>
-        </div>
-        <div className="user-section">
-          <p>Welcome, {user?.name || "User"}!</p>
-          <button onClick={handleLogout} className="logout-button">Logout</button>
-        </div>
-      </header>
-
-      {/* Main content area */}
-      <div className="dashboard-content">
-        {/* Sidebar navigation */}
-        <aside className="sidebar">
-          <nav>
-            <ul>
-              <li><a href="/dashboard">My Shelves</a></li>
-              <li className="active"><a href="/product-library">Product Library</a></li>
-              <li><a href="/store-insights">Store Insights</a></li>
-            </ul>
-          </nav>
-        </aside>
-
-        {/* Main content */}
-        <main className="main-content">
-          <div className="page-title">
-            <h2>Product Library</h2>
-            <button 
-              onClick={handleAddNewProduct} 
-              className="add-product-button"
-            >
-              + Add New Product
-            </button>
+    <>
+      <Head>
+        <title>Product Library</title>
+      </Head>
+      <div className="product-library-container">
+        {/* Header with user info */}
+        <header className="dashboard-header">
+          <div className="logo-section">
+            <h1>Product Library</h1>
           </div>
-
-          {/* Search and filter */}
-          <div className="filter-section">
-            <div className="search-box">
-              <input
-                type="text"
-                placeholder="Search products..."
-                value={searchTerm}
-                onChange={handleSearch}
-                className="search-input"
-              />
-            </div>
-            <div className="category-filter">
-              <select 
-                value={selectedCategory} 
-                onChange={handleCategoryFilter}
-                className="category-select"
-              >
-                <option value="">All Categories</option>
-                {uniqueCategories.map(category => (
-                  <option key={category} value={category}>
-                    {category.charAt(0).toUpperCase() + category.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="user-section">
+            <p>Welcome, {user?.name || "User"}!</p>
+            <button onClick={handleLogout} className="logout-button">Logout</button>
           </div>
+        </header>
 
-          {loading ? (
-            <div className="loading">Loading products...</div>
-          ) : products.length === 0 ? (
-            <div className="empty-state">
-              <img src="/empty-products.png" alt="No products" className="empty-icon" />
-              <h3>No products added yet</h3>
-              <p>Add your first product to start optimizing shelf placement</p>
+        {/* Main content area */}
+        <div className="dashboard-content">
+          {/* Sidebar navigation */}
+          <aside className="sidebar">
+            <nav>
+              <ul>
+                <li><a href="/dashboard">Dashboard</a></li>
+                <li className="active"><a href="/product-library">Product Library</a></li>
+                <li><a href="/grid-selection">Create Shelf</a></li>
+                <li><a href="/store-insights">Store Insights</a></li>
+              </ul>
+            </nav>
+          </aside>
+
+          {/* Main content */}
+          <main className="main-content">
+            <div className="page-title">
+              <h2>Product Library</h2>
               <button 
-                onClick={handleAddNewProduct}
-                className="create-first-button"
+                onClick={handleAddNewProduct} 
+                className="add-product-button"
               >
-                Add Your First Product
+                + Add New Product
               </button>
             </div>
-          ) : filteredProducts.length === 0 ? (
-            <div className="no-results">
-              <p>No products match your search criteria</p>
-            </div>
-          ) : (
-            <div className="products-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Product Name</th>
-                    <th>Category</th>
-                    <th>Price</th>
-                    <th>Margin %</th>
-                    <th>Size</th>
-                    <th>Buying Decision</th>
-                    <th>Demand</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredProducts.map(product => (
-                    <tr key={product.id}>
-                      <td>{product.name}</td>
-                      <td>
-                        <span 
-                          className="category-badge" 
-                          style={{ backgroundColor: getCategoryColor(product.category) }}
-                        >
-                          {product.category}
-                        </span>
-                      </td>
-                      <td>₹{product.price}</td>
-                      <td>{product.margin}%</td>
-                      <td>{product.size}</td>
-                      <td>{product.buyingDecision}</td>
-                      <td>{product.demand}</td>
-                      <td className="action-buttons">
-                        <button 
-                          onClick={() => handleEditProduct(product)} 
-                          className="edit-button"
-                        >
-                          Edit
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteProduct(product)} 
-                          className="delete-button"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </main>
-      </div>
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && selectedProduct && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h3>Confirm Delete</h3>
-            <p>Are you sure you want to delete <strong>{selectedProduct.name}</strong>?</p>
-            <p className="warning">This will also remove the product from any shelves it's placed on.</p>
-            
-            <div className="modal-actions">
-              <button onClick={() => setShowDeleteModal(false)} className="cancel-button">Cancel</button>
-              <button onClick={confirmDeleteProduct} className="delete-confirm-button">Delete</button>
+            {/* Search and filter */}
+            <div className="filter-section">
+              <div className="search-box">
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  value={searchTerm}
+                  onChange={handleSearch}
+                  className="search-input"
+                />
+              </div>
+              <div className="category-filter">
+                <select 
+                  value={selectedCategory} 
+                  onChange={handleCategoryFilter}
+                  className="category-select"
+                >
+                  <option value="">All Categories</option>
+                  {uniqueCategories.map(category => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="loading">
+                <div className="loading-spinner"></div>
+                <p>Loading products...</p>
+              </div>
+            ) : products.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">📦</div>
+                <h3>No products added yet</h3>
+                <p>Add your first product to start optimizing shelf placement</p>
+                <button 
+                  onClick={handleAddNewProduct}
+                  className="create-first-button"
+                >
+                  Add Your First Product
+                </button>
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="no-results">
+                <p>No products match your search criteria</p>
+              </div>
+            ) : (
+              <div className="products-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Product Name</th>
+                      <th>Category</th>
+                      <th>Price</th>
+                      <th>Margin %</th>
+                      <th>Size</th>
+                      <th>Buying Decision</th>
+                      <th>Demand</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredProducts.map(product => (
+                      <tr key={product.id}>
+                        <td>{product.name}</td>
+                        <td>
+                          <span 
+                            className="category-badge" 
+                            style={{ backgroundColor: getCategoryColor(product.category) }}
+                          >
+                            {product.category || 'Uncategorized'}
+                          </span>
+                        </td>
+                        <td>${typeof product.price === 'number' ? product.price.toFixed(2) : product.price}</td>
+                        <td>{product.margin ? (typeof product.margin === 'number' ? product.margin.toFixed(0) : product.margin) : '-'}%</td>
+                        <td>{product.size || '-'}</td>
+                        <td>{product.buyingDecision || '-'}</td>
+                        <td>
+                          {product.demand ? (
+                            <span className={`${product.demand.toLowerCase()}-demand demand-badge`}>
+                              {product.demand}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="action-buttons">
+                          <button 
+                            onClick={() => handleEditProduct(product)} 
+                            className="edit-button"
+                          >
+                            Edit
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteProduct(product)} 
+                            className="delete-button"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </main>
+        </div>
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && selectedProduct && (
+          <div className="modal-overlay">
+            <div className="modal-content">
+              <h3>Confirm Delete</h3>
+              <p>Are you sure you want to delete <strong>{selectedProduct.name}</strong>?</p>
+              <p className="warning">This will also remove the product from any shelves it's placed on.</p>
+              
+              <div className="modal-actions">
+                <button onClick={() => setShowDeleteModal(false)} className="cancel-button">Cancel</button>
+                <button onClick={confirmDeleteProduct} className="delete-confirm-button">Delete</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <style jsx>{`
-        /* Main container layout */
-        .product-library-container {
-          font-family: 'Poppins', sans-serif;
-          background: #f9f6f2;
-          min-height: 100vh;
-          display: flex;
-          flex-direction: column;
-        }
+        <style jsx>{`
+          /* Main container layout */
+          .product-library-container {
+            font-family: 'Poppins', sans-serif;
+            background: #f9f6f2;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+          }
 
-        /* Header styling */
-        .dashboard-header {
-          background: #8b6f47;
-          color: white;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 15px 30px;
-          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        }
+          /* Header styling */
+          .dashboard-header {
+            background: #8b6f47;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 30px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+          }
 
-        .logo-section h1 {
-          margin: 0;
-          font-size: 1.8rem;
-        }
+          .logo-section h1 {
+            margin: 0;
+            font-size: 1.8rem;
+          }
 
-        .user-section {
-          display: flex;
-          align-items: center;
-          gap: 20px;
-        }
+          .user-section {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+          }
 
-        .user-section p {
-          margin: 0;
-        }
+          .user-section p {
+            margin: 0;
+          }
 
-        .logout-button {
-          background: rgba(255, 255, 255, 0.2);
-          color: white;
-          border: none;
-          padding: 8px 15px;
-          border-radius: 4px;
-          cursor: pointer;
-          transition: background 0.3s ease;
-        }
+          .logout-button {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+            font-size: 0.9rem;
+          }
 
-        .logout-button:hover {
-          background: rgba(255, 255, 255, 0.3);
-        }
+          .logout-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+          }
 
-        /* Main content area with sidebar */
-        .dashboard-content {
-          display: flex;
-          flex: 1;
-          height: calc(100vh - 60px); /* Subtract header height */
-        }
+          /* Main content area with sidebar */
+          .dashboard-content {
+            display: flex;
+            flex: 1;
+            height: calc(100vh - 60px); /* Subtract header height */
+          }
 
-        /* Sidebar styling */
-        .sidebar {
-          width: 250px;
-          background: #e0c9a7;
-          padding: 30px 0;
-          height: 100%;
-        }
+          /* Sidebar styling */
+          .sidebar {
+            width: 250px;
+            background: #e0c9a7;
+            padding: 30px 0;
+            height: 100%;
+          }
 
-        .sidebar ul {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-        }
+          .sidebar ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+          }
 
-        .sidebar li {
-          margin-bottom: 5px;
-        }
+          .sidebar li {
+            margin-bottom: 5px;
+          }
 
-        .sidebar li a {
-          display: block;
-          padding: 12px 25px;
-          color: #6b4f35;
-          text-decoration: none;
-          font-weight: 500;
-          transition: background 0.3s ease;
-        }
+          .sidebar li a {
+            display: block;
+            padding: 12px 25px;
+            color: #6b4f35;
+            text-decoration: none;
+            font-weight: 500;
+            transition: background 0.3s ease;
+          }
 
-        .sidebar li:hover a {
-          background: rgba(139, 111, 71, 0.1);
-        }
+          .sidebar li:hover a {
+            background: rgba(139, 111, 71, 0.1);
+          }
 
-        .sidebar li.active a {
-          background: #8b6f47;
-          color: white;
-        }
+          .sidebar li.active a {
+            background: #8b6f47;
+            color: white;
+          }
 
-        /* Main content styling */
-        .main-content {
-          flex: 1;
-          padding: 30px;
-          overflow-y: auto;
-        }
+          /* Main content styling */
+          .main-content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+          }
 
-        .page-title {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 25px;
-        }
+          .page-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+          }
 
-        .page-title h2 {
-          color: #6b4f35;
-          margin: 0;
-          font-size: 1.8rem;
-        }
+          .page-title h2 {
+            color: #6b4f35;
+            margin: 0;
+            font-size: 1.8rem;
+          }
 
-        .add-product-button {
-          background: #8b6f47;
-          color: white;
-          border: none;
-          padding: 10px 20px;
-          border-radius: 6px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: background 0.3s ease;
-        }
+          .add-product-button {
+            background: #8b6f47;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s ease;
+          }
 
-        .add-product-button:hover {
-          background: #7a5d3a;
-        }
+          .add-product-button:hover {
+            background: #7a5d3a;
+          }
 
-        /* Filter section */
-        .filter-section {
-          display: flex;
-          gap: 15px;
-          margin-bottom: 20px;
-        }
+          /* Filter section */
+          .filter-section {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+          }
 
-        .search-box {
-          flex: 1;
-        }
+          .search-box {
+            flex: 1;
+          }
 
-        .search-input {
-          width: 100%;
-          padding: 10px 15px;
-          border: 2px solid #e0c9a7;
-          border-radius: 6px;
-          font-size: 16px;
-          background: #fff;
-          transition: border-color 0.3s ease;
-        }
+          .search-input {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #e0c9a7;
+            border-radius: 6px;
+            font-size: 1rem;
+            background: #fff;
+            transition: border-color 0.3s ease;
+          }
 
-        .search-input:focus {
-          outline: none;
-          border-color: #8b6f47;
-        }
+          .search-input:focus {
+            outline: none;
+            border-color: #8b6f47;
+          }
 
-        .category-filter {
-          width: 200px;
-        }
+          .category-filter {
+            width: 200px;
+          }
 
-        .category-select {
-          width: 100%;
-          padding: 10px 15px;
-          border: 2px solid #e0c9a7;
-          border-radius: 6px;
-          font-size: 16px;
-          background: #fff;
-          transition: border-color 0.3s ease;
-        }
+          .category-select {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #e0c9a7;
+            border-radius: 6px;
+            font-size: 1rem;
+            background: #fff;
+            transition: border-color 0.3s ease;
+          }
 
-        .category-select:focus {
-          outline: none;
-          border-color: #8b6f47;
-        }
+          .category-select:focus {
+            outline: none;
+            border-color: #8b6f47;
+          }
 
-        /* Loading state */
-        .loading {
-          text-align: center;
-          padding: 40px;
-          color: #8b6f47;
-          font-size: 1.2rem;
-        }
+          /* Loading state */
+          .loading {
+            text-align: center;
+            padding: 40px;
+            color: #8b6f47;
+          }
+          
+          .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #8b6f47;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+          }
+          
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
 
-        /* Empty state */
-        .empty-state {
-          text-align: center;
-          padding: 60px 20px;
-          background: white;
-          border-radius: 10px;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-        }
+          /* Empty state */
+          .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+          }
 
-        .empty-icon {
-          width: 120px;
-          height: 120px;
-          margin-bottom: 20px;
-        }
+          .empty-icon {
+            font-size: 5rem;
+            margin-bottom: 20px;
+            color: #8b6f47;
+          }
 
-        .empty-state h3 {
-          color: #6b4f35;
-          margin-bottom: 10px;
-          font-size: 1.5rem;
-        }
+          .empty-state h3 {
+            color: #6b4f35;
+            margin-bottom: 10px;
+            font-size: 1.5rem;
+          }
 
-        .empty-state p {
-          color: #8d8d8d;
-          margin-bottom: 20px;
-        }
+          .empty-state p {
+            color: #8d8d8d;
+            margin-bottom: 20px;
+          }
 
-        .create-first-button {
-          background: #8b6f47;
-          color: white;
-          border: none;
-          padding: 12px 25px;
-          border-radius: 6px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: background 0.3s ease;
-        }
+          .create-first-button {
+            background: #8b6f47;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s ease;
+          }
 
-        .create-first-button:hover {
-          background: #7a5d3a;
-        }
+          .create-first-button:hover {
+            background: #7a5d3a;
+          }
 
-        /* No results */
-        .no-results {
-          text-align: center;
-          padding: 40px;
-          background: white;
-          border-radius: 10px;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-          color: #8d8d8d;
-          font-size: 1.2rem;
-        }
+          /* No results */
+          .no-results {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            color: #8d8d8d;
+            font-size: 1.2rem;
+          }
 
-        /* Products table */
-        .products-table {
-          overflow-x: auto;
-          background: white;
-          border-radius: 10px;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-        }
+          /* Products table */
+          .products-table {
+            overflow-x: auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+          }
 
-        table {
-          width: 100%;
-          border-collapse: collapse;
-        }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
 
-        th {
-          background: #f0e6d9;
-          color: #6b4f35;
-          text-align: left;
-          padding: 15px;
-          font-weight: 600;
-          position: sticky;
-          top: 0;
-        }
+          th {
+            background: #f0e6d9;
+            color: #6b4f35;
+            text-align: left;
+            padding: 15px;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+          }
 
-        td {
-          padding: 15px;
-          border-bottom: 1px solid #f0e6d9;
-          color: #6b4f35;
-        }
+          td {
+            padding: 15px;
+            border-bottom: 1px solid #f0e6d9;
+            color: #6b4f35;
+          }
 
-        tr:last-child td {
-          border-bottom: none;
-        }
+          tr:last-child td {
+            border-bottom: none;
+          }
 
-        tr:hover {
-          background: #fbf7f2;
-        }
+          tr:hover {
+            background: #fbf7f2;
+          }
 
-        .category-badge {
-          display: inline-block;
-          padding: 5px 10px;
-          border-radius: 20px;
-          color: white;
-          font-size: 0.85rem;
-          font-weight: 500;
-          text-transform: capitalize;
-        }
+          .category-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            color: white;
+            font-size: 0.85rem;
+            font-weight: 500;
+          }
+          
+          .demand-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+          }
 
-        .action-buttons {
-          display: flex;
-          gap: 8px;
-        }
+          .high-demand {
+            color: #388e3c;
+            background: rgba(56, 142, 60, 0.1);
+          }
 
-        .action-buttons button {
-          padding: 6px 12px;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-weight: 500;
-          transition: background 0.3s ease;
-        }
+          .medium-demand {
+            color: #f57c00;
+            background: rgba(245, 124, 0, 0.1);
+          }
 
-        .edit-button {
-          background: #e7e2d8;
-          color: #6b4f35;
-        }
+          .low-demand {
+            color: #757575;
+            background: rgba(117, 117, 117, 0.1);
+          }
+          
+          .seasonal-demand {
+            color: #7e57c2;
+            background: rgba(126, 87, 194, 0.1);
+          }
 
-        .edit-button:hover {
-          background: #d9d0c3;
-        }
+          .action-buttons {
+            display: flex;
+            gap: 8px;
+          }
 
-        .delete-button {
-          background: #f8eee5;
-          color: #c06b6b;
-        }
+          .action-buttons button {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.3s ease;
+          }
 
-        .delete-button:hover {
-          background: #f0e1d5;
-        }
+          .edit-button {
+            background: #e7e2d8;
+            color: #6b4f35;
+          }
 
-        /* Modal styling */
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-        }
+          .edit-button:hover {
+            background: #d9d0c3;
+          }
 
-        .modal-content {
-          background: white;
-          border-radius: 10px;
-          padding: 25px;
-          width: 400px;
-          max-width: 90%;
-        }
+          .delete-button {
+            background: #f8eee5;
+            color: #c06b6b;
+          }
 
-        .modal-content h3 {
-          color: #6b4f35;
-          margin-top: 0;
-          margin-bottom: 15px;
-        }
+          .delete-button:hover {
+            background: #f0e1d5;
+          }
 
-        .modal-content p {
-          color: #6b4f35;
-          margin-bottom: 10px;
-        }
+          /* Modal styling */
+          .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+          }
 
-        .warning {
-          color: #c06b6b;
-          font-size: 0.9rem;
-        }
+          .modal-content {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            width: 400px;
+            max-width: 90%;
+          }
 
-        .modal-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 10px;
-          margin-top: 20px;
-        }
+          .modal-content h3 {
+            color: #6b4f35;
+            margin-top: 0;
+            margin-bottom: 15px;
+          }
 
-        .modal-actions button {
-          padding: 10px 15px;
-          border: none;
-          border-radius: 5px;
-          cursor: pointer;
-          font-weight: 500;
-        }
+          .modal-content p {
+            color: #6b4f35;
+            margin-bottom: 10px;
+          }
 
-        .cancel-button {
-          background: #f1f1f1;
-          color: #666;
-        }
+          .warning {
+            color: #c06b6b;
+            font-size: 0.9rem;
+          }
 
-        .cancel-button:hover {
-          background: #e5e5e5;
-        }
+          .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+          }
 
-        .delete-confirm-button {
-          background: #d32f2f;
-          color: white;
-        }
+          .modal-actions button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+          }
 
-        .delete-confirm-button:hover {
-          background: #b71c1c;
-        }
-      `}</style>
-    </div>
+          .cancel-button {
+            background: #f1f1f1;
+            color: #666;
+          }
+
+          .cancel-button:hover {
+            background: #e5e5e5;
+          }
+
+          .delete-confirm-button {
+            background: #d32f2f;
+            color: white;
+          }
+
+          .delete-confirm-button:hover {
+            background: #b71c1c;
+          }
+          
+          /* Responsive styles */
+          @media (max-width: 1024px) {
+            .products-table {
+              overflow-x: auto;
+            }
+            
+            table {
+              min-width: 900px;
+            }
+          }
+          
+          @media (max-width: 768px) {
+            .dashboard-content {
+              flex-direction: column;
+              height: auto;
+            }
+            
+            .sidebar {
+              width: 100%;
+              height: auto;
+              padding: 15px 0;
+            }
+            
+            .sidebar ul {
+              display: flex;
+              overflow-x: auto;
+              padding: 0 15px;
+            }
+            
+            .sidebar li {
+              margin-right: 5px;
+              margin-bottom: 0;
+            }
+            
+            .sidebar li a {
+              padding: 10px 15px;
+              white-space: nowrap;
+            }
+            
+            .main-content {
+              padding: 20px;
+            }
+            
+            .filter-section {
+              flex-direction: column;
+            }
+            
+            .category-filter {
+              width: 100%;
+            }
+            
+            .page-title {
+              flex-direction: column;
+              align-items: flex-start;
+              gap: 10px;
+            }
+            
+            .add-product-button {
+              width: 100%;
+              text-align: center;
+            }
+          }
+        `}</style>
+      </div>
+    </>
   );
 }
