@@ -29,10 +29,15 @@ export default function GridSelection() {
   const [hoveredSlot, setHoveredSlot] = useState<number | null>(null);
   const [hoveredPosition, setHoveredPosition] = useState({ x: 0, y: 0 });
   const [grid, setGrid] = useState<Array<Product | null>>([]);
+  const [savingData, setSavingData] = useState(false);
   
   // Fixed grid size of 5x5
   const rows = 5;
   const cols = 5;
+  
+  // Row labels (A-E) and column labels (1-5)
+  const rowLabels = ['A', 'B', 'C', 'D', 'E'];
+  const colLabels = ['1', '2', '3', '4', '5'];
 
   // Store insights for tooltip display
   const storeInsights = [
@@ -107,26 +112,97 @@ export default function GridSelection() {
   const fetchProducts = async () => {
     try {
       // Try to get products from API first
-      const scriptURL = "https://script.google.com/macros/s/AKfycbwyLQGdV5eUAtrKthcXcIZg5-Ux7M6LipVbsM5IRmr7uLu8VQY5sCjJ1YMMiv5dsyrX/exec?action=getProducts";
+      const scriptURL = "https://script.google.com/macros/s/AKfycbyOQraXDIXxTtPdZsSqw5zH50zh0-oAdOhgIakAK9HznoHsIqxMffA-nU88CYcfC1US/exec?action=getProducts";
       
       try {
         const response = await axios.get(scriptURL);
-        if (response.data && response.data.length > 0) {
-          // Format API data
-          const formattedProducts = response.data.slice(1).map((item: any, index: number) => ({
-            id: `api_product_${index}`,
-            name: item[0] || 'Product',
-            category: item[1] || 'General',
-            price: parseFloat(item[2]) || 0,
-            margin: parseFloat(item[3]) || 0,
-            size: item[4] || 'Standard',
-            buyingDecision: item[5] || 'Impulsive',
-            demand: item[6] || 'Medium'
-          }));
+        // Log the structure of the response to understand its format
+        console.log("API Response structure:", {
+          isArray: Array.isArray(response.data),
+          type: typeof response.data,
+          keys: response.data && typeof response.data === 'object' ? Object.keys(response.data) : 'N/A',
+          sample: response.data
+        });
+        
+        // Try different ways to extract the data
+        let productData = null;
+        
+        // Attempt #1: Direct array access
+        if (Array.isArray(response.data)) {
+          productData = response.data;
+        } 
+        // Attempt #2: Check for data in a nested property
+        else if (response.data && typeof response.data === 'object') {
+          // Common nested properties
+          const possibleKeys = ['data', 'items', 'products', 'records', 'rows', 'values'];
+          for (const key of possibleKeys) {
+            if (response.data[key] && Array.isArray(response.data[key])) {
+              productData = response.data[key];
+              break;
+            }
+          }
+          
+          // Look for any array in the response if we haven't found one yet
+          if (!productData) {
+            for (const key in response.data) {
+              if (Array.isArray(response.data[key]) && response.data[key].length > 0) {
+                productData = response.data[key];
+                break;
+              }
+            }
+          }
+        }
+        
+        // If we found data, format and use it
+        if (productData && Array.isArray(productData) && productData.length > 0) {
+          const formattedProducts = productData.slice(0).map((item: any, index: number) => {
+            // Handle both array items and object items
+            if (Array.isArray(item)) {
+              return {
+                id: `api_product_${index}`,
+                name: item[0] || 'Product',
+                category: item[1] || 'General',
+                price: parseFloat(item[2]) || 0,
+                margin: parseFloat(item[3]) || 0,
+                size: item[4] || 'Standard',
+                buyingDecision: item[5] || 'Impulsive',
+                demand: item[6] || 'Medium'
+              };
+            } else if (typeof item === 'object' && item !== null) {
+              const keys = Object.keys(item);
+              return {
+                id: `api_product_${index}`,
+                name: item.name || item.product_name || item[keys[0]] || 'Product',
+                category: item.category || item[keys[1]] || 'General',
+                price: parseFloat(item.price || item[keys[2]]) || 0,
+                margin: parseFloat(item.margin || item[keys[3]]) || 0,
+                size: item.size || item[keys[4]] || 'Standard',
+                buyingDecision: item.buyingDecision || item[keys[5]] || 'Impulsive',
+                demand: item.demand || item[keys[6]] || 'Medium'
+              };
+            }
+            // Fallback for unexpected item format
+            return {
+              id: `api_product_${index}`,
+              name: 'Product ' + (index + 1),
+              category: 'General',
+              price: 0,
+              margin: 0,
+              size: 'Standard',
+              buyingDecision: 'Impulsive',
+              demand: 'Medium'
+            };
+          });
+          
+          console.log("Formatted products:", formattedProducts);
           setProducts(formattedProducts);
           calculateBestSlots(formattedProducts);
           return;
         }
+        
+        // If we reach here, API data format wasn't usable
+        console.warn("Couldn't extract product data from API response. Falling back to localStorage.");
+        
       } catch (error) {
         console.error("Error fetching products from API:", error);
       }
@@ -235,28 +311,54 @@ export default function GridSelection() {
   const handleMouseLeave = () => {
     setHoveredSlot(null);
   };
+  
+  const getPositionLabel = (index: number) => {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    return `${rowLabels[row]}${colLabels[col]}`;
+  };
 
-  const saveGrid = () => {
+  const saveGrid = async () => {
     try {
+      setSavingData(true);
+      
       // Get filled slots with product info
       const filledSlots = grid
-        .map((product, index) => product ? { ...product, slot: index } : null)
+        .map((product, index) => product ? { ...product, slot: index, position: getPositionLabel(index) } : null)
         .filter(item => item !== null);
         
       // Create shelf object
       const shelfData = {
-        id: `shelf_${Date.now()}`,
-        name: `Shelf ${new Date().toLocaleDateString()}`,
-        location: "Main Store",
+        shelfId: `shelf_${Date.now()}`,
         userId: user?.id || "",
+        userEmail: user?.email || "",
         userName: user?.name || "User",
-        createdAt: new Date().toISOString().split("T")[0],
-        products: filledSlots
+        location: "Main Store",
+        createdAt: new Date().toISOString(),
+        products: filledSlots,
+        action: "saveShelf"  // This is important for the Google Apps Script to identify the action
       };
       
       // Save to localStorage
       const existingShelves = JSON.parse(localStorage.getItem("shelves") || "[]");
       localStorage.setItem("shelves", JSON.stringify([...existingShelves, shelfData]));
+      
+      // Send to Google Sheets
+      try {
+        const scriptURL = "https://script.google.com/macros/s/AKfycbym4j8lv0Fs-fsy9DLf9nAfPYpXbG8HMF6QGxTJ9ATps2FsgpyJkucuFEB6tKl_FXc/exec";
+        
+        // Send the data to Google Sheets
+        const response = await axios.post(scriptURL, shelfData);
+        
+        if (response.data && response.data.success) {
+          console.log("Grid data saved to Google Sheets successfully!");
+        } else {
+          console.warn("Warning: Saved to localStorage but may not have saved to Google Sheets:", response.data);
+        }
+      } catch (apiError) {
+        console.error("Error saving to Google Sheets (saved to localStorage only):", apiError);
+        // Still continue with local success since we saved to localStorage
+      }
       
       // Give feedback and redirect
       alert("Shelf layout saved successfully!");
@@ -264,6 +366,8 @@ export default function GridSelection() {
     } catch (error) {
       console.error("Error saving grid:", error);
       alert("Error saving grid. Please try again.");
+    } finally {
+      setSavingData(false);
     }
   };
 
@@ -273,11 +377,11 @@ export default function GridSelection() {
     return slottingFees[row]?.[col] || 20;
   };
 
-  if (loading) {
+  if (loading || savingData) {
     return (
       <div className="loading-container">
         <div className="loading-spinner"></div>
-        <p>Loading grid...</p>
+        <p>{savingData ? "Saving grid layout to Google Sheets..." : "Loading grid..."}</p>
         
         <style jsx>{`
           .loading-container {
@@ -316,7 +420,7 @@ export default function GridSelection() {
       <div className="container">
         <div className="heading-section">
           <h1>Optimize Your Shelf Space</h1>
-          <p>Smart placement, maximum profit! (Fixed 5×5 Grid)</p>
+          <p>Smart placement, maximum profit! (5×5 Grid)</p>
         </div>
         
         <div className="layout-container">
@@ -370,7 +474,11 @@ export default function GridSelection() {
                 <button onClick={() => router.push("/dashboard")} className="cancel-button">
                   Cancel
                 </button>
-                <button onClick={saveGrid} className="save-button" disabled={grid.every(cell => cell === null)}>
+                <button 
+                  onClick={saveGrid} 
+                  className="save-button" 
+                  disabled={grid.every(cell => cell === null)}
+                >
                   Save Grid
                 </button>
               </div>
@@ -384,44 +492,68 @@ export default function GridSelection() {
                 Select a product and click on the grid to place it. Cells with higher slotting fees are often in premium positions.
               </p>
               
-              <div className="grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-                {Array(rows * cols).fill(null).map((_, idx) => {
-                  const product = grid[idx];
-                  const fee = getSlottingFee(idx);
-                  const isBestSlot = idx === profitData.bestSlot;
+              <div className="grid-container">
+                {/* Column labels */}
+                <div className="grid-labels column-labels">
+                  <div className="label-spacer"></div>
+                  {colLabels.map((label, idx) => (
+                    <div key={idx} className="column-label">{label}</div>
+                  ))}
+                </div>
+                
+                <div className="grid-with-row-labels">
+                  {/* Row labels */}
+                  <div className="grid-labels row-labels">
+                    {rowLabels.map((label, idx) => (
+                      <div key={idx} className="row-label">{label}</div>
+                    ))}
+                  </div>
                   
-                  return (
-                    <div
-                      key={idx}
-                      className={`grid-cell ${product ? 'occupied' : ''} ${isBestSlot ? 'best-slot' : ''}`}
-                      onClick={() => handleCellClick(idx)}
-                      onMouseEnter={(e) => handleMouseEnter(idx, e)}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                      {product ? (
-                        <div className="cell-content">
-                          <div className="product-name">{product.name}</div>
-                          <div className="product-price">
-                            ${typeof product.price === 'number' ? product.price.toFixed(2) : product.price}
-                          </div>
-                          <button 
-                            className="remove-btn" 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveProduct(idx);
-                            }}
-                          >
-                            ×
-                          </button>
+                  {/* Main grid */}
+                  <div className="grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+                    {Array(rows * cols).fill(null).map((_, idx) => {
+                      const product = grid[idx];
+                      const fee = getSlottingFee(idx);
+                      const isBestSlot = idx === profitData.bestSlot;
+                      const position = getPositionLabel(idx);
+                      
+                      return (
+                        <div
+                          key={idx}
+                          className={`grid-cell ${product ? 'occupied' : ''} ${isBestSlot ? 'best-slot' : ''}`}
+                          onClick={() => handleCellClick(idx)}
+                          onMouseEnter={(e) => handleMouseEnter(idx, e)}
+                          onMouseLeave={handleMouseLeave}
+                          data-position={position}
+                        >
+                          {product ? (
+                            <div className="cell-content">
+                              <div className="position-label">{position}</div>
+                              <div className="product-name">{product.name}</div>
+                              <div className="product-price">
+                                ${typeof product.price === 'number' ? product.price.toFixed(2) : product.price}
+                              </div>
+                              <button 
+                                className="remove-btn" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveProduct(idx);
+                                }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="cell-content empty">
+                              <div className="position-label">{position}</div>
+                              <div className="slotting-fee">Fee: ${fee}</div>
+                            </div>
+                          )}
                         </div>
-                      ) : (
-                        <div className="cell-content empty">
-                          <div className="slotting-fee">Fee: ${fee}</div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
               
               <div className="grid-legend">
@@ -450,6 +582,7 @@ export default function GridSelection() {
           >
             <h3>🏪 Store Insights</h3>
             <p>{storeInsights[hoveredSlot % storeInsights.length]}</p>
+            <p className="position-info">Position: {getPositionLabel(hoveredSlot)}</p>
           </div>
         )}
         
@@ -650,13 +783,51 @@ export default function GridSelection() {
             cursor: not-allowed;
           }
           
+          .grid-container {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 20px;
+          }
+          
+          .grid-with-row-labels {
+            display: flex;
+            align-items: center;
+          }
+          
+          .grid-labels {
+            display: flex;
+          }
+          
+          .column-labels {
+            margin-left: 30px;
+            margin-bottom: 5px;
+          }
+          
+          .row-labels {
+            flex-direction: column;
+            margin-right: 5px;
+          }
+          
+          .column-label, .row-label {
+            width: 30px;
+            height: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            color: #6b4f35;
+          }
+          
+          .label-spacer {
+            width: 30px;
+          }
+          
           .grid {
             display: grid;
             gap: 8px;
             background: #f8f4ef;
             padding: 15px;
             border-radius: 8px;
-            margin-bottom: 15px;
           }
           
           .grid-cell {
@@ -699,6 +870,15 @@ export default function GridSelection() {
             align-items: center;
             justify-content: center;
             padding: 5px;
+            position: relative;
+          }
+          
+          .position-label {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            font-size: 0.7rem;
+            opacity: 0.6;
           }
           
           .product-name {
@@ -709,7 +889,8 @@ export default function GridSelection() {
           }
           
           .grid-cell.best-slot .product-name,
-          .grid-cell.best-slot .product-price {
+          .grid-cell.best-slot .product-price,
+          .grid-cell.best-slot .position-label {
             color: white;
           }
           
@@ -788,9 +969,15 @@ export default function GridSelection() {
           }
           
           .store-insight p {
-            margin: 0;
+            margin: 0 0 5px;
             font-size: 0.9rem;
             color: #7d6450;
+          }
+          
+          .position-info {
+            font-weight: bold;
+            margin-top: 5px;
+            color: #8b6f47;
           }
           
           @media (max-width: 1024px) {

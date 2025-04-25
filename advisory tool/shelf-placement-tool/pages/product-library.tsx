@@ -34,7 +34,7 @@ export default function ProductLibrary() {
   const [selectedCategory, setSelectedCategory] = useState<string>("");
 
   // Google Apps Script web app URL
-  const API_URL = "https://script.google.com/macros/s/AKfycbwyLQGdV5eUAtrKthcXcIZg5-Ux7M6LipVbsM5IRmr7uLu8VQY5sCjJ1YMMiv5dsyrX/exec";
+  const API_URL = "https://script.google.com/macros/s/AKfycbyOQraXDIXxTtPdZsSqw5zH50zh0-oAdOhgIakAK9HznoHsIqxMffA-nU88CYcfC1US/exec";
 
   useEffect(() => {
     // Check if user is logged in

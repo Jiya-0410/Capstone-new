@@ -210,9 +210,6 @@ export default function Dashboard() {
               <li>
                 <a href="/store-insights">Store Insights</a>
               </li>
-              <li>
-                <a href="#">Settings</a>
-              </li>
             </ul>
           </nav>
           <div className="user-info">

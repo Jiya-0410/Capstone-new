@@ -52,22 +52,22 @@ export default function Home() {
             <div className="creator">
               <img src="/jiyaagarwal.jpg" alt="Jiya Agarwal" className="creator-image" />
               <h3>Jiya Agarwal</h3>
-              <p>Frontend Developer & Data Enthusiast</p>
+              <p>Frontend Developer</p>
             </div>
             <div className="creator">
               <img src="/sakshee.jpg" alt="Sakshee Gite" className="creator-image" />
               <h3>Sakshee Gite</h3>
-              <p>Backend Developer & API Specialist</p>
+              <p>Linear Programming Implementation </p>
             </div>
             <div className="creator">
               <img src="/Zeeshan.jpg" alt="Zeeshan Khan" className="creator-image" />
               <h3>Zeeshan Khan</h3>
-              <p>Role Descriptionj jjdfdf jdss dfjd sfjdfdsljfdj fldjjflkd jfksdjflksjflksj</p>
+              <p>Database creation</p>
             </div>
             <div className="creator">
               <img src="/Aman.jpg" alt="Aman Pawar" className="creator-image" />
               <h3>Aman Pawar</h3>
-              <p>Role Descriptionmndnsf, mdsfm,ndn,m   dsnf,mnsmdfn d,mnf,mdsnf,msdn f,sdmnf,msdnf,dmnf,sdmn </p>
+              <p>ML Model Implementation </p>
             </div>
           </div>
         </div>
