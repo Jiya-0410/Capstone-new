@@ -34,7 +34,7 @@ export default function ProductLibrary() {
   const [selectedCategory, setSelectedCategory] = useState<string>("");
 
   // Google Apps Script web app URL
-  const API_URL = "https://script.google.com/macros/s/AKfycbyOQraXDIXxTtPdZsSqw5zH50zh0-oAdOhgIakAK9HznoHsIqxMffA-nU88CYcfC1US/exec";
+  const API_URL = "https://script.google.com/macros/s/AKfycbxwfIkv78V98UL6JJHXYFl27nzgrEZUiXX5EaIEYy3FIwWaeLrE54iyvBCZDpC3GlHs/exec";
 
   useEffect(() => {
     // Check if user is logged in
@@ -214,7 +214,7 @@ export default function ProductLibrary() {
                 <li><a href="/dashboard">Dashboard</a></li>
                 <li className="active"><a href="/product-library">Product Library</a></li>
                 <li><a href="/grid-selection">Create Shelf</a></li>
-                <li><a href="/store-insights">Store Insights</a></li>
+                {/* <li><a href="/store-insights">Store Insights</a></li> */}
               </ul>
             </nav>
           </aside>

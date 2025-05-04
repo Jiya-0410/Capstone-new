@@ -160,7 +160,7 @@ export default function ProductEntry() {
 
       // Also try to save to the Google Script API (if available)
       try {
-        const scriptURL = "https://script.google.com/macros/s/AKfycbyOQraXDIXxTtPdZsSqw5zH50zh0-oAdOhgIakAK9HznoHsIqxMffA-nU88CYcfC1US/exec?action=saveProduct";
+        const scriptURL = "https://script.google.com/macros/s/AKfycbxwfIkv78V98UL6JJHXYFl27nzgrEZUiXX5EaIEYy3FIwWaeLrE54iyvBCZDpC3GlHs/exec?action=saveProduct";
         const formData = new FormData();
         Object.keys(productToSave).forEach((key) => formData.append(key, String(productToSave[key as keyof Product])));
         await axios.post(scriptURL, formData);

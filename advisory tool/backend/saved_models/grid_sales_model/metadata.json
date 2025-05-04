@@ -1,0 +1,60 @@
+{
+    "categorical_features": [
+        "Product Line",
+        "Product Size Category",
+        "Buying Decision",
+        "Season",
+        "Grid_Row"
+    ],
+    "numerical_features": [
+        "Month",
+        "Month_Num",
+        "Grid_Col",
+        "Competitor_Presence_Binary",
+        "Competitor Product Impact",
+        "Product Sales Velocity",
+        "Profit Margin (%)",
+        "Grid_Popularity",
+        "Product_Popularity",
+        "Row_Popularity",
+        "Col_Popularity",
+        "Distance_From_Center",
+        "Competitor_Impact_Ratio",
+        "Premium_Location",
+        "Sales_Previous_Month",
+        "Sales_Growth",
+        "Sales_Growth_Pct"
+    ],
+    "ensemble_weights": {
+        "xgb": 0.4,
+        "rf_1": 0.3,
+        "rf_2": 0.3
+    },
+    "all_grids": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5",
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E5"
+    ]
+}

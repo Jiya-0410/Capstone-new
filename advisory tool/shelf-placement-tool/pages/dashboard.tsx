@@ -26,6 +26,7 @@ interface Shelf {
   name: string;
   location: string;
   userId: string;
+  userEmail?: string;
   userName: string;
   createdAt: string;
   products: Product[];
@@ -64,13 +65,12 @@ export default function Dashboard() {
       setUser(parsedUser);
       
       // Load user's shelves
-      loadUserShelves(parsedUser.id);
+      loadUserShelves(parsedUser.id, parsedUser.email);
       
       // Load recent products
       loadRecentProducts();
       
     } catch (error) {
-      console.error("Error parsing user data:", error);
       console.error("Error parsing user data:", error);
       router.push("/user-login");
     } finally {
@@ -78,17 +78,29 @@ export default function Dashboard() {
     }
   }, [router]);
 
-  const loadUserShelves = (userId: string) => {
+  const loadUserShelves = (userId: string, userEmail: string) => {
     try {
       // Get all shelves from localStorage
       const allShelves = JSON.parse(localStorage.getItem("shelves") || "[]");
       
-      // Filter shelves for current user
-      const filteredShelves = allShelves.filter((shelf: Shelf) => shelf.userId === userId);
+      if (allShelves.length === 0) {
+        setUserShelves([]);
+        return;
+      }
+      
+      // Filter shelves for current user by checking multiple possible identifiers
+      const filteredShelves = allShelves.filter((shelf: any) => {
+        // Check different possible fields that might identify the user's shelves
+        const matchesUserId = 
+          shelf.userId === userId ||
+          shelf.userEmail === userEmail;
+          
+        return matchesUserId;
+      });
       
       setUserShelves(filteredShelves);
       
-      // Calculate stats
+      // Calculate stats if we have shelves
       if (filteredShelves.length > 0) {
         const totalProducts = filteredShelves.reduce((sum: number, shelf: Shelf) => 
           sum + (shelf.products?.length || 0), 0);
@@ -99,7 +111,8 @@ export default function Dashboard() {
         const productCounts: Record<string, number> = {};
         filteredShelves.forEach((shelf: Shelf) => {
           shelf.products?.forEach(product => {
-            productCounts[product.name] = (productCounts[product.name] || 0) + 1;
+            const productName = product.name || 'Unknown Product';
+            productCounts[productName] = (productCounts[productName] || 0) + 1;
           });
         });
         
@@ -117,7 +130,7 @@ export default function Dashboard() {
           totalProducts,
           totalShelves: filteredShelves.length,
           avgProductsPerShelf: avgProducts,
-          mostUsedProduct
+          mostUsedProduct: mostUsedProduct || "N/A"
         });
       }
     } catch (error) {
@@ -207,9 +220,9 @@ export default function Dashboard() {
               <li>
                 <a href="/grid-selection">Create Shelf</a>
               </li>
-              <li>
+              {/* <li>
                 <a href="/store-insights">Store Insights</a>
-              </li>
+              </li> */}
             </ul>
           </nav>
           <div className="user-info">
@@ -292,7 +305,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="shelf-footer">
-                      <span>Created: {shelf.createdAt || 'Recently'}</span>
+                      <span>Created: {new Date(shelf.createdAt).toLocaleDateString() || 'Recently'}</span>
                       <span>Location: {shelf.location || 'Main Store'}</span>
                     </div>
                   </div>
@@ -369,14 +382,14 @@ export default function Dashboard() {
                   <h4>Add New Product</h4>
                   <p>Add a new product to your library</p>
                 </div>
-                <div 
+                {/* <div 
                   className="action-card"
                   onClick={() => router.push("/store-insights")}
                 >
                   <div className="action-icon">📈</div>
                   <h4>View Store Insights</h4>
                   <p>Analyze store performance data</p>
-                </div>
+                </div> */}
                 <div 
                   className="action-card"
                   onClick={() => router.push("/product-library")}

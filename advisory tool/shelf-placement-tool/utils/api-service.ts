@@ -1,12 +1,5 @@
-// api-service.ts
+const API_URL = "https://script.google.com/macros/s/AKfycbxwfIkv78V98UL6JJHXYFl27nzgrEZUiXX5EaIEYy3FIwWaeLrE54iyvBCZDpC3GlHs/exec";
 
-// ✅ Deployment URL of your Google Apps Script endpoint
-const API_URL = "https://script.google.com/macros/s/AKfycbyOQraXDIXxTtPdZsSqw5zH50zh0-oAdOhgIakAK9HznoHsIqxMffA-nU88CYcfC1US/exec";
-
-// ✅ Toggle this for mocking instead of real API
-const DEVELOPMENT_MODE = false;
-
-// ✅ Central error handler
 const handleApiError = (error: any) => {
   console.error("API Error Details:", error);
   return {
@@ -15,18 +8,15 @@ const handleApiError = (error: any) => {
   };
 };
 
-// ✅ API request handler
 const makeApiRequest = async (action: string, data: any = {}) => {
-  if (DEVELOPMENT_MODE) {
-    console.log(`Development mode: ${action} mock response`);
-    return getMockResponse(action, data);
-  }
-
   try {
     const requestData = { ...data, action };
+    console.log(`Making API request with action: ${action}`);
 
-    if (action === "checkApiStatus") {
-      const response = await fetch(`${API_URL}?action=${action}`, {
+    // For GET requests
+    if (["checkApiStatus", "getProducts", "getGrid", "getUsers", "getStoreInsights"].includes(action)) {
+      const queryParams = new URLSearchParams({ action }).toString();
+      const response = await fetch(`${API_URL}?${queryParams}`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       });
@@ -36,6 +26,7 @@ const makeApiRequest = async (action: string, data: any = {}) => {
       return result;
     }
 
+    // For POST requests
     const response = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -45,107 +36,23 @@ const makeApiRequest = async (action: string, data: any = {}) => {
     const result = await response.json();
     console.log(`Received ${action} response:`, result);
     return result;
-
   } catch (error) {
     return handleApiError(error);
   }
 };
 
-// ✅ Development mock data
-const getMockResponse = (action: string, data: any) => {
-  switch (action) {
-    case "checkApiStatus":
-      return { success: true, message: "API is running", version: "1.0.1" };
-
-    case "userSignup":
-      return {
-        success: true,
-        message: "Account created successfully. Please check your email to verify your account.",
-        user: {
-          id: "mock-user-id",
-          name: data.name,
-          email: data.email,
-          isVerified: false
-        },
-        token: "mock-verification-token"
-      };
-
-    case "userLogin":
-      return {
-        success: true,
-        message: "Login successful",
-        user: {
-          id: "mock-user-id",
-          name: "Mock User",
-          email: data.email,
-          isVerified: true
-        }
-      };
-
-    case "verifyEmail":
-      return {
-        success: true,
-        message: "Email verified successfully. You can now log in.",
-        user: {
-          id: "mock-user-id",
-          name: "Mock User",
-          email: "user@example.com",
-          isVerified: true
-        }
-      };
-
-    case "resendVerificationCode":
-      return {
-        success: true,
-        message: "A new verification code has been sent to your email.",
-        token: "mock-verification-token"
-      };
-
-    case "forgotPassword":
-      return {
-        success: true,
-        message: "Password reset instructions sent to your email",
-        token: "mock-reset-token"
-      };
-
-    case "resetPassword":
-      return {
-        success: true,
-        message: "Password reset successfully. You can now log in with your new password."
-      };
-
-    case "adminSignup":
-      return {
-        success: true,
-        message: "Admin account created successfully. You can now log in.",
-        admin: {
-          id: "mock-admin-id",
-          name: data.name,
-          email: data.email
-        }
-      };
-
-    case "adminLogin":
-      return {
-        success: true,
-        message: "Admin login successful",
-        admin: {
-          id: "mock-admin-id",
-          name: "Admin User",
-          email: data.email
-        }
-      };
-
-    default:
-      return { success: false, message: "Unknown action in development mode" };
-  }
-};
-
-// ✅ Exportable API service
+// API service for Google Sheets integration
 const ApiService = {
+  // API Status
   checkApiStatus: async () => await makeApiRequest("checkApiStatus"),
 
-  // User
+  // Data Retrieval - Match actions directly to those in Google Apps Script
+  getProducts: async () => await makeApiRequest("getProducts"),
+  getGrid: async () => await makeApiRequest("getGrid"),
+  getUsers: async () => await makeApiRequest("getUsers"),
+  getStoreInsights: async () => await makeApiRequest("getStoreInsights"),
+
+  // User Authentication
   userSignup: async (name: string, email: string, password: string) =>
     await makeApiRequest("userSignup", { name, email, password }),
 
@@ -158,24 +65,45 @@ const ApiService = {
   resendVerificationCode: async (email: string) =>
     await makeApiRequest("resendVerificationCode", { email }),
 
-  userForgotPassword: async (email: string) =>
-    await makeApiRequest("forgotPassword", { email, isAdmin: false }),
+  forgotPassword: async (email: string) =>
+    await makeApiRequest("forgotPassword", { email }),
 
-  userResetPassword: async (email: string, token: string, newPassword: string) =>
-    await makeApiRequest("resetPassword", { email, token, newPassword, isAdmin: false }),
+  resetPassword: async (email: string, token: string, newPassword: string) =>
+    await makeApiRequest("resetPassword", { email, token, newPassword }),
 
-  // Admin
+  getUserShelves: async (userEmail: string) =>
+    await makeApiRequest("getUserShelves", { userEmail }),
+
+  // Admin Authentication
   adminSignup: async (name: string, email: string, password: string, adminCode: string) =>
     await makeApiRequest("adminSignup", { name, email, password, adminCode }),
 
   adminLogin: async (email: string, password: string) =>
     await makeApiRequest("adminLogin", { email, password }),
 
-  adminForgotPassword: async (email: string) =>
-    await makeApiRequest("forgotPassword", { email, isAdmin: true }),
+  // Product Management
+  saveProduct: async (productData: any) => 
+    await makeApiRequest("saveProduct", productData),
 
-  adminResetPassword: async (email: string, token: string, newPassword: string) =>
-    await makeApiRequest("resetPassword", { email, token, newPassword, isAdmin: true })
+  // Shelf Management
+  addShelf: async (shelfData: any) => 
+    await makeApiRequest("addShelf", shelfData),
+
+  updateShelf: async (gridId: string, shelfData: any) => 
+    await makeApiRequest("updateShelf", { gridId, shelfData }),
+
+  deleteShelf: async (gridId: string) => 
+    await makeApiRequest("deleteShelf", { gridId }),
+
+  // Shelf Item Management
+  addShelfItem: async (shelfItemData: any) => 
+    await makeApiRequest("addShelfItem", shelfItemData),
+
+  updateShelfItem: async (gridId: string, shelfItemData: any) => 
+    await makeApiRequest("updateShelfItem", { gridId, shelfItemData }),
+
+  deleteShelfItem: async (gridId: string) => 
+    await makeApiRequest("deleteShelfItem", { gridId })
 };
 
 export default ApiService;

@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import Head from "next/head";
 import axios from "axios";
 
+// Define types
 interface Product {
   id: string;
   name: string;
@@ -13,11 +14,37 @@ interface Product {
   buyingDecision: string;
   demand: string;
   slot?: number;
+  position?: string;
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  isVerified: boolean;
+}
+
+interface ShelfData {
+  id: string;
+  shelfId?: string; // For backward compatibility
+  name: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  location: string;
+  createdAt: string;
+  products: Product[];
+}
+
+interface RecommendedPositions {
+  selected_positions: string[];
 }
 
 export default function GridSelection() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const { shelfId } = router.query; // Get shelfId from URL if reopening a shelf
+  
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -30,6 +57,10 @@ export default function GridSelection() {
   const [hoveredPosition, setHoveredPosition] = useState({ x: 0, y: 0 });
   const [grid, setGrid] = useState<Array<Product | null>>([]);
   const [savingData, setSavingData] = useState(false);
+  const [isReopeningShelf, setIsReopeningShelf] = useState(false);
+  const [shelfName, setShelfName] = useState<string>("");
+  const [recommendedPositions, setRecommendedPositions] = useState<string[]>([]);
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
   
   // Fixed grid size of 5x5
   const rows = 5;
@@ -71,15 +102,21 @@ export default function GridSelection() {
       // Initialize the grid with the fixed size
       initializeGrid();
       
-      // Fetch products and calculate slotting fees
-      fetchProducts();
+      // If we have a shelfId in the query params, attempt to reopen the shelf
+      if (shelfId) {
+        setIsReopeningShelf(true);
+        reopenShelf(shelfId as string);
+      } else {
+        // Otherwise fetch products as normal
+        fetchProducts();
+      }
     } catch (error) {
       console.error("Error checking user data:", error);
       router.push("/user-login");
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, shelfId]);
 
   const initializeGrid = () => {
     // Initialize 5x5 grid with null values (empty slots)
@@ -90,7 +127,7 @@ export default function GridSelection() {
   };
 
   const generateSlottingFees = () => {
-    // Generate random slotting fees for each position in the grid
+    // Generate slotting fees for each position in the grid
     // Higher fees for prime positions (middle and eye-level)
     const fees: number[][] = [];
     
@@ -109,14 +146,126 @@ export default function GridSelection() {
     setSlottingFees(fees);
   };
 
+  const fetchRecommendedPositions = async (productName: string) => {
+    setIsLoadingRecommendations(true);
+    try {
+      const response = await axios.post('http://127.0.0.1:8000/', {
+        product_name: productName
+      });
+      
+      if (response.data && response.data.selected_positions) {
+        setRecommendedPositions(response.data.selected_positions);
+        console.log("Recommended positions:", response.data.selected_positions);
+      }
+    } catch (error) {
+      console.error("Error fetching position recommendations:", error);
+    } finally {
+      setIsLoadingRecommendations(false);
+    }
+  };
+
+  const reopenShelf = async (id: string) => {
+    try {
+      console.log("Reopening shelf with ID:", id);
+      
+      // First, try to load from localStorage
+      const existingShelves = JSON.parse(localStorage.getItem("shelves") || "[]");
+      let shelfData: ShelfData | null = null;
+      
+      // Look for shelf with matching id OR shelfId (for backward compatibility)
+      for (const shelf of existingShelves) {
+        if ((shelf.id === id) || (shelf.shelfId === id)) {
+          shelfData = shelf;
+          break;
+        }
+      }
+      
+      // If not found in localStorage, try to fetch from Google Sheets
+      if (!shelfData) {
+        try {
+          const scriptURL = `https://script.google.com/macros/s/AKfycbym4j8lv0Fs-fsy9DLf9nAfPYpXbG8HMF6QGxTJ9ATps2FsgpyJkucuFEB6tKl_FXc/exec?action=getShelf&id=${id}`;
+          
+          const response = await axios.get(scriptURL);
+          console.log("API Response for shelf:", response.data);
+          
+          if (response.data && (response.data.id === id || response.data.shelfId === id)) {
+            shelfData = response.data;
+          } else if (response.data && Array.isArray(response.data)) {
+            // In case API returns an array of shelves
+            const foundShelf = response.data.find((shelf: any) => 
+              shelf.id === id || shelf.shelfId === id
+            );
+            if (foundShelf) {
+              shelfData = foundShelf;
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching shelf from API:", error);
+        }
+      }
+      
+      if (shelfData) {
+        console.log("Found shelf data:", shelfData);
+        
+        // Set shelf name
+        setShelfName(shelfData.name || `Shelf ${new Date(shelfData.createdAt).toLocaleDateString()}`);
+        
+        // Rebuild the grid from the shelf data
+        const newGrid = Array(rows * cols).fill(null);
+        
+        if (Array.isArray(shelfData.products)) {
+          shelfData.products.forEach(product => {
+            if (product && (product.slot !== undefined || product.position)) {
+              let slotIndex = product.slot;
+              
+              // If slot is not available, try to derive it from position
+              if (slotIndex === undefined && product.position) {
+                const rowIndex = rowLabels.indexOf(product.position[0]);
+                const colIndex = colLabels.indexOf(product.position[1]);
+                
+                if (rowIndex !== -1 && colIndex !== -1) {
+                  slotIndex = rowIndex * cols + colIndex;
+                }
+              }
+              
+              if (slotIndex !== undefined && slotIndex >= 0 && slotIndex < rows * cols) {
+                newGrid[slotIndex] = { ...product };
+              }
+            }
+          });
+        }
+        
+        setGrid(newGrid);
+        
+        // Also load available products for potential additions
+        fetchProducts();
+      } else {
+        console.error("Shelf not found with ID:", id);
+        alert("Shelf not found. Creating a new shelf instead.");
+        
+        // Reset to a new shelf
+        setIsReopeningShelf(false);
+        initializeGrid();
+        fetchProducts();
+      }
+    } catch (error) {
+      console.error("Error reopening shelf:", error);
+      alert("Error reopening shelf. Creating a new shelf instead.");
+      
+      // Reset to a new shelf
+      setIsReopeningShelf(false);
+      initializeGrid();
+      fetchProducts();
+    }
+  };
+
   const fetchProducts = async () => {
     try {
       // Try to get products from API first
-      const scriptURL = "https://script.google.com/macros/s/AKfycbyOQraXDIXxTtPdZsSqw5zH50zh0-oAdOhgIakAK9HznoHsIqxMffA-nU88CYcfC1US/exec?action=getProducts";
+      const scriptURL = "https://script.google.com/macros/s/AKfycbxwfIkv78V98UL6JJHXYFl27nzgrEZUiXX5EaIEYy3FIwWaeLrE54iyvBCZDpC3GlHs/exec?action=getProducts";
       
       try {
         const response = await axios.get(scriptURL);
-        // Log the structure of the response to understand its format
         console.log("API Response structure:", {
           isArray: Array.isArray(response.data),
           type: typeof response.data,
@@ -171,7 +320,7 @@ export default function GridSelection() {
             } else if (typeof item === 'object' && item !== null) {
               const keys = Object.keys(item);
               return {
-                id: `api_product_${index}`,
+                id: item.id || `api_product_${index}`,
                 name: item.name || item.product_name || item[keys[0]] || 'Product',
                 category: item.category || item[keys[1]] || 'General',
                 price: parseFloat(item.price || item[keys[2]]) || 0,
@@ -277,6 +426,13 @@ export default function GridSelection() {
   const handleProductSelection = (productId: string) => {
     const product = products.find(p => p.id === productId);
     setSelectedProduct(product || null);
+    
+    // If a product is selected, fetch position recommendations
+    if (product) {
+      fetchRecommendedPositions(product.name);
+    } else {
+      setRecommendedPositions([]);
+    }
   };
 
   const handleCellClick = (index: number) => {
@@ -290,11 +446,14 @@ export default function GridSelection() {
     
     // Place product in selected cell
     const newGrid = [...grid];
-    newGrid[index] = {...selectedProduct, slot: index};
+    const position = getPositionLabel(index);
+    newGrid[index] = {...selectedProduct, slot: index, position};
     setGrid(newGrid);
     
     // Clear selected product
     setSelectedProduct(null);
+    // Clear recommended positions
+    setRecommendedPositions([]);
   };
 
   const handleRemoveProduct = (index: number) => {
@@ -325,11 +484,13 @@ export default function GridSelection() {
       // Get filled slots with product info
       const filledSlots = grid
         .map((product, index) => product ? { ...product, slot: index, position: getPositionLabel(index) } : null)
-        .filter(item => item !== null);
+        .filter(item => item !== null) as Product[];
         
-      // Create shelf object
+      // Create shelf object - use consistent property names
       const shelfData = {
-        shelfId: `shelf_${Date.now()}`,
+        id: shelfId || `shelf_${Date.now()}`, // Use existing ID if reopening shelf
+        shelfId: shelfId || `shelf_${Date.now()}`, // For backward compatibility
+        name: shelfName || `Shelf ${new Date().toLocaleDateString()}`,
         userId: user?.id || "",
         userEmail: user?.email || "",
         userName: user?.name || "User",
@@ -339,15 +500,31 @@ export default function GridSelection() {
         action: "saveShelf"  // This is important for the Google Apps Script to identify the action
       };
       
-      // Save to localStorage
+      // Save to localStorage with proper format and structure
       const existingShelves = JSON.parse(localStorage.getItem("shelves") || "[]");
-      localStorage.setItem("shelves", JSON.stringify([...existingShelves, shelfData]));
+      
+      // If updating existing shelf, replace it
+      if (shelfId) {
+        const shelfIndex = existingShelves.findIndex((s: any) => 
+          s.id === shelfId || s.shelfId === shelfId
+        );
+        
+        if (shelfIndex !== -1) {
+          existingShelves[shelfIndex] = shelfData;
+        } else {
+          existingShelves.push(shelfData);
+        }
+      } else {
+        existingShelves.push(shelfData);
+      }
+      
+      localStorage.setItem("shelves", JSON.stringify(existingShelves));
       
       // Send to Google Sheets
       try {
         const scriptURL = "https://script.google.com/macros/s/AKfycbym4j8lv0Fs-fsy9DLf9nAfPYpXbG8HMF6QGxTJ9ATps2FsgpyJkucuFEB6tKl_FXc/exec";
         
-        // Send the data to Google Sheets
+        // Send the data to Google Sheets - ensure correct format for Google Sheets
         const response = await axios.post(scriptURL, shelfData);
         
         if (response.data && response.data.success) {
@@ -381,7 +558,8 @@ export default function GridSelection() {
     return (
       <div className="loading-container">
         <div className="loading-spinner"></div>
-        <p>{savingData ? "Saving grid layout to Google Sheets..." : "Loading grid..."}</p>
+        <p>{savingData ? "Saving grid layout to Google Sheets..." : 
+            isReopeningShelf ? "Loading existing shelf..." : "Loading grid..."}</p>
         
         <style jsx>{`
           .loading-container {
@@ -414,12 +592,12 @@ export default function GridSelection() {
   return (
     <>
       <Head>
-        <title>Grid Selection - 5×5 Grid</title>
+        <title>{isReopeningShelf ? `Edit ${shelfName}` : "Grid Selection - 5×5 Grid"}</title>
       </Head>
       
       <div className="container">
         <div className="heading-section">
-          <h1>Optimize Your Shelf Space</h1>
+          <h1>{isReopeningShelf ? `Edit ${shelfName}` : "Optimize Your Shelf Space"}</h1>
           <p>Smart placement, maximum profit! (5×5 Grid)</p>
         </div>
         
@@ -470,6 +648,18 @@ export default function GridSelection() {
                 </div>
               )}
               
+              {isReopeningShelf && (
+                <div className="shelf-info">
+                  <input 
+                    type="text" 
+                    value={shelfName} 
+                    onChange={(e) => setShelfName(e.target.value)}
+                    placeholder="Enter shelf name"
+                    className="shelf-name-input"
+                  />
+                </div>
+              )}
+              
               <div className="action-buttons">
                 <button onClick={() => router.push("/dashboard")} className="cancel-button">
                   Cancel
@@ -479,7 +669,7 @@ export default function GridSelection() {
                   className="save-button" 
                   disabled={grid.every(cell => cell === null)}
                 >
-                  Save Grid
+                  {isReopeningShelf ? "Update Shelf" : "Save Grid"}
                 </button>
               </div>
             </div>
@@ -520,7 +710,9 @@ export default function GridSelection() {
                       return (
                         <div
                           key={idx}
-                          className={`grid-cell ${product ? 'occupied' : ''} ${isBestSlot ? 'best-slot' : ''}`}
+                          className={`grid-cell ${product ? 'occupied' : ''} ${isBestSlot ? 'best-slot' : ''} ${
+                            !product && selectedProduct && recommendedPositions.includes(position) ? 'recommended-slot' : ''
+                          }`}
                           onClick={() => handleCellClick(idx)}
                           onMouseEnter={(e) => handleMouseEnter(idx, e)}
                           onMouseLeave={handleMouseLeave}
@@ -556,6 +748,14 @@ export default function GridSelection() {
                 </div>
               </div>
               
+              {/* Loading indicator for API recommendations */}
+              {isLoadingRecommendations && (
+                <div className="loading-recommendations">
+                  <div className="small-spinner"></div>
+                  <span>Getting optimal positions...</span>
+                </div>
+              )}
+              
               <div className="grid-legend">
                 <div className="legend-item">
                   <div className="legend-color best-color"></div>
@@ -568,6 +768,10 @@ export default function GridSelection() {
                 <div className="legend-item">
                   <div className="legend-color empty-color"></div>
                   <span>Empty slot</span>
+                </div>
+                <div className="legend-item">
+                  <div className="legend-color recommended-color"></div>
+                  <span>Recommended position</span>
                 </div>
               </div>
             </div>
@@ -595,424 +799,471 @@ export default function GridSelection() {
             font-family: 'Poppins', sans-serif;
           }
           
+          /* Continue the style jsx from the previous artifact */
+
           .heading-section {
-            width: 100%;
-            background: #e0c9a7;
-            color: #6b4f35;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 30px 0;
-          }
-          
-          .heading-section h1 {
-            font-size: 2.5rem;
-            margin: 0;
-          }
-          
-          .heading-section p {
-            font-size: 1.2rem;
-            margin-top: 5px;
-          }
-          
-          .layout-container {
-            display: grid;
-            grid-template-columns: 350px 1fr;
-            gap: 20px;
-            padding: 20px;
-          }
-          
-          .panel {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            margin-bottom: 20px;
-          }
-          
-          .panel h2 {
-            color: #6b4f35;
-            margin-top: 0;
-            margin-bottom: 15px;
-            font-size: 1.3rem;
-          }
-          
-          .help-text {
-            color: #7d6450;
-            font-size: 0.9rem;
-            margin-bottom: 15px;
-          }
-          
-          .no-products {
-            text-align: center;
-            padding: 20px;
-            color: #7d6450;
-          }
-          
-          .add-button {
-            background: #8b6f47;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 5px;
-            font-weight: bold;
-            cursor: pointer;
-            margin-top: 10px;
-          }
-          
-          .products-list {
-            max-height: 300px;
-            overflow-y: auto;
-            margin-bottom: 15px;
-          }
-          
-          .product-item {
-            background: #f8f4ef;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 10px;
-            cursor: pointer;
-            transition: background 0.2s, transform 0.2s;
-            border: 2px solid transparent;
-          }
-          
-          .product-item:hover {
-            background: #f0e6d9;
-            transform: translateY(-2px);
-          }
-          
-          .product-item.selected {
-            border-color: #8b6f47;
-            background: #f0e6d9;
-          }
-          
-          .product-item h3 {
-            margin: 0 0 8px;
-            font-size: 1rem;
-            color: #6b4f35;
-          }
-          
-          .product-details {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.85rem;
-            margin-top: 5px;
-          }
-          
-          .product-category {
-            background: rgba(107, 79, 53, 0.1);
-            color: #6b4f35;
-            padding: 2px 6px;
-            border-radius: 10px;
-          }
-          
-          .product-price, .product-margin {
-            color: #6b4f35;
-          }
-          
-          .high-demand {
-            background: rgba(56, 142, 60, 0.1);
-            color: #388e3c;
-            padding: 2px 6px;
-            border-radius: 10px;
-          }
-          
-          .medium-demand {
-            background: rgba(245, 124, 0, 0.1);
-            color: #f57c00;
-            padding: 2px 6px;
-            border-radius: 10px;
-          }
-          
-          .low-demand {
-            background: rgba(117, 117, 117, 0.1);
-            color: #757575;
-            padding: 2px 6px;
-            border-radius: 10px;
-          }
-          
-          .selected-product-info {
-            background: #f0e6d9;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-          }
-          
-          .selected-product-info h3 {
-            margin: 0 0 5px;
-            font-size: 1rem;
-            color: #6b4f35;
-          }
-          
-          .selected-product-info p {
-            margin: 0;
-            font-size: 0.9rem;
-            color: #7d6450;
-          }
-          
-          .action-buttons {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 15px;
-          }
-          
-          .cancel-button {
-            background: #e7e2d8;
-            color: #6b4f35;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 5px;
-            font-weight: bold;
-            cursor: pointer;
-          }
-          
-          .save-button {
-            background: #8b6f47;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 5px;
-            font-weight: bold;
-            cursor: pointer;
-          }
-          
-          .save-button:disabled {
-            background: #ccbbaa;
-            cursor: not-allowed;
-          }
-          
-          .grid-container {
-            display: flex;
-            flex-direction: column;
-            margin-bottom: 20px;
-          }
-          
-          .grid-with-row-labels {
-            display: flex;
-            align-items: center;
-          }
-          
-          .grid-labels {
-            display: flex;
-          }
-          
-          .column-labels {
-            margin-left: 30px;
-            margin-bottom: 5px;
-          }
-          
-          .row-labels {
-            flex-direction: column;
-            margin-right: 5px;
-          }
-          
-          .column-label, .row-label {
-            width: 30px;
-            height: 30px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-weight: bold;
-            color: #6b4f35;
-          }
-          
-          .label-spacer {
-            width: 30px;
-          }
-          
-          .grid {
-            display: grid;
-            gap: 8px;
-            background: #f8f4ef;
-            padding: 15px;
-            border-radius: 8px;
-          }
-          
-          .grid-cell {
-            background: #f0e6d9;
-            border-radius: 5px;
-            aspect-ratio: 1/1;
-            min-height: 80px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            position: relative;
-            transition: transform 0.2s, box-shadow 0.2s;
-          }
-          
-          .grid-cell:hover {
-            transform: scale(1.05);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-          }
-          
-          .grid-cell.occupied {
-            background: #e0c9a7;
-          }
-          
-          .grid-cell.best-slot {
-            background: #8b6f47;
-            color: white;
-          }
-          
-          .grid-cell.best-slot .cell-content.empty .slotting-fee {
-            color: white;
-          }
-          
-          .cell-content {
-            text-align: center;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 5px;
-            position: relative;
-          }
-          
-          .position-label {
-            position: absolute;
-            top: 5px;
-            left: 5px;
-            font-size: 0.7rem;
-            opacity: 0.6;
-          }
-          
-          .product-name {
-            font-weight: bold;
-            font-size: 0.85rem;
-            margin-bottom: 5px;
-            color: #6b4f35;
-          }
-          
-          .grid-cell.best-slot .product-name,
-          .grid-cell.best-slot .product-price,
-          .grid-cell.best-slot .position-label {
-            color: white;
-          }
-          
-          .remove-btn {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: rgba(0, 0, 0, 0.1);
-            border: none;
-            color: #6b4f35;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 2;
-          }
-          
-          .slotting-fee {
-            font-size: 0.75rem;
-            color: #7d6450;
-          }
-          
-          .grid-legend {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            flex-wrap: wrap;
-          }
-          
-          .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            font-size: 0.85rem;
-            color: #6b4f35;
-          }
-          
-          .legend-color {
-            width: 15px;
-            height: 15px;
-            border-radius: 3px;
-          }
-          
-          .best-color {
-            background: #8b6f47;
-          }
-          
-          .occupied-color {
-            background: #e0c9a7;
-          }
-          
-          .empty-color {
-            background: #f0e6d9;
-          }
-          
-          .store-insight {
-            position: fixed;
-            background: white;
-            padding: 12px;
-            border-radius: 8px;
-            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
-            min-width: 200px;
-            z-index: 1000;
-            transition: opacity 0.2s ease-in-out;
-            opacity: ${hoveredSlot !== null ? 1 : 0};
-          }
-          
-          .store-insight h3 {
-            margin: 0 0 5px;
-            font-size: 1rem;
-            color: #6b4f35;
-          }
-          
-          .store-insight p {
-            margin: 0 0 5px;
-            font-size: 0.9rem;
-            color: #7d6450;
-          }
-          
-          .position-info {
-            font-weight: bold;
-            margin-top: 5px;
-            color: #8b6f47;
-          }
-          
-          @media (max-width: 1024px) {
-            .layout-container {
-              grid-template-columns: 1fr;
-            }
-            
-            .left-panel {
-              order: 1;
-            }
-            
-            .right-panel {
-              order: 0;
-            }
-          }
-          
-          @media (max-width: 768px) {
-            .heading-section h1 {
-              font-size: 2rem;
-            }
-            
-            .layout-container {
-              padding: 10px;
-              gap: 10px;
-            }
-            
-            .panel {
-              padding: 15px;
-            }
-            
-            .grid-cell {
-              min-height: 60px;
-            }
-          }
-        `}</style>
+          width: 100%;
+          background: #e0c9a7;
+          color: #6b4f35;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 30px 0;
+        }
+
+      .heading-section h1 {
+        font-size: 2.5rem;
+        margin: 0;
+      }
+
+      .heading-section p {
+        font-size: 1.2rem;
+        margin-top: 5px;
+      }
+
+      .layout-container {
+        display: grid;
+        grid-template-columns: 350px 1fr;
+        gap: 20px;
+        padding: 20px;
+      }
+
+      .panel {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        margin-bottom: 20px;
+      }
+
+      .panel h2 {
+        color: #6b4f35;
+        margin-top: 0;
+        margin-bottom: 15px;
+        font-size: 1.3rem;
+      }
+
+      .help-text {
+        color: #7d6450;
+        font-size: 0.9rem;
+        margin-bottom: 15px;
+      }
+
+      .no-products {
+        text-align: center;
+        padding: 20px;
+        color: #7d6450;
+      }
+
+      .add-button {
+        background: #8b6f47;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-top: 10px;
+      }
+
+      .products-list {
+        max-height: 300px;
+        overflow-y: auto;
+        margin-bottom: 15px;
+      }
+
+      .product-item {
+        background: #f8f4ef;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.2s;
+        border: 2px solid transparent;
+      }
+
+      .product-item:hover {
+        background: #f0e6d9;
+        transform: translateY(-2px);
+      }
+
+      .product-item.selected {
+        border-color: #8b6f47;
+        background: #f0e6d9;
+      }
+
+      .product-item h3 {
+        margin: 0 0 8px;
+        font-size: 1rem;
+        color: #6b4f35;
+      }
+
+      .product-details {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.85rem;
+        margin-top: 5px;
+      }
+
+      .product-category {
+        background: rgba(107, 79, 53, 0.1);
+        color: #6b4f35;
+        padding: 2px 6px;
+        border-radius: 10px;
+      }
+
+      .product-price, .product-margin {
+        color: #6b4f35;
+      }
+
+      .high-demand {
+        background: rgba(56, 142, 60, 0.1);
+        color: #388e3c;
+        padding: 2px 6px;
+        border-radius: 10px;
+      }
+
+      .medium-demand {
+        background: rgba(245, 124, 0, 0.1);
+        color: #f57c00;
+        padding: 2px 6px;
+        border-radius: 10px;
+      }
+
+      .low-demand {
+        background: rgba(117, 117, 117, 0.1);
+        color: #757575;
+        padding: 2px 6px;
+        border-radius: 10px;
+      }
+
+      .selected-product-info {
+        background: #f0e6d9;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+      }
+
+      .selected-product-info h3 {
+        margin: 0 0 5px;
+        font-size: 1rem;
+        color: #6b4f35;
+      }
+
+      .selected-product-info p {
+        margin: 0;
+        font-size: 0.9rem;
+        color: #7d6450;
+      }
+
+      .action-buttons {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 15px;
+      }
+
+      .cancel-button {
+        background: #e7e2d8;
+        color: #6b4f35;
+        border: none;
+        padding: 10px 15px;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+
+      .save-button {
+        background: #8b6f47;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+
+      .save-button:disabled {
+        background: #ccbbaa;
+        cursor: not-allowed;
+      }
+
+      .grid-container {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 20px;
+      }
+
+      .grid-with-row-labels {
+        display: flex;
+        align-items: center;
+      }
+
+      .grid-labels {
+        display: flex;
+      }
+
+      .column-labels {
+        margin-left: 30px;
+        margin-bottom: 5px;
+      }
+
+      .row-labels {
+        flex-direction: column;
+        margin-right: 5px;
+      }
+
+      .column-label, .row-label {
+        width: 30px;
+        height: 30px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-weight: bold;
+        color: #6b4f35;
+      }
+
+      .label-spacer {
+        width: 30px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 8px;
+        background: #f8f4ef;
+        padding: 15px;
+        border-radius: 8px;
+      }
+
+      .grid-cell {
+        background: #f0e6d9;
+        border-radius: 5px;
+        aspect-ratio: 1/1;
+        min-height: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        position: relative;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+
+      .grid-cell:hover {
+        transform: scale(1.05);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .grid-cell.occupied {
+        background: #e0c9a7;
+      }
+
+      .grid-cell.best-slot {
+        background: #8b6f47;
+        color: white;
+      }
+
+      .grid-cell.recommended-slot {
+        background: #9cbfa7;
+        border: 2px dashed #5b8c6e;
+        box-shadow: 0 0 5px rgba(91, 140, 110, 0.5);
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0% { opacity: 0.8; }
+        50% { opacity: 1; }
+        100% { opacity: 0.8; }
+      }
+
+      .grid-cell.best-slot .cell-content.empty .slotting-fee {
+        color: white;
+      }
+
+      .cell-content {
+        text-align: center;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 5px;
+        position: relative;
+      }
+
+      .position-label {
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        font-size: 0.7rem;
+        opacity: 0.6;
+      }
+
+      .product-name {
+        font-weight: bold;
+        font-size: 0.85rem;
+        margin-bottom: 5px;
+        color: #6b4f35;
+      }
+
+      .grid-cell.best-slot .product-name,
+      .grid-cell.best-slot .product-price,
+      .grid-cell.best-slot .position-label {
+        color: white;
+      }
+
+      .remove-btn {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.1);
+        border: none;
+        color: #6b4f35;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 2;
+      }
+
+      .slotting-fee {
+        font-size: 0.75rem;
+        color: #7d6450;
+      }
+
+      .loading-recommendations {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin: 15px 0;
+        color: #6b4f35;
+        font-size: 0.9rem;
+      }
+
+      .small-spinner {
+        border: 3px solid rgba(0, 0, 0, 0.1);
+        border-left-color: #8b6f47;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        animation: spin 1s linear infinite;
+      }
+
+      .grid-legend {
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+        flex-wrap: wrap;
+      }
+
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.85rem;
+        color: #6b4f35;
+      }
+
+      .legend-color {
+        width: 15px;
+        height: 15px;
+        border-radius: 3px;
+      }
+
+      .best-color {
+        background: #8b6f47;
+      }
+
+      .occupied-color {
+        background: #e0c9a7;
+      }
+
+      .empty-color {
+        background: #f0e6d9;
+      }
+
+      .recommended-color {
+        background: #9cbfa7;
+        border: 2px dashed #5b8c6e;
+      }
+
+      .store-insight {
+        position: fixed;
+        background: white;
+        padding: 12px;
+        border-radius: 8px;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+        min-width: 200px;
+        z-index: 1000;
+        transition: opacity 0.2s ease-in-out;
+      }
+
+      .store-insight h3 {
+        margin: 0 0 5px;
+        font-size: 1rem;
+        color: #6b4f35;
+      }
+
+      .store-insight p {
+        margin: 0 0 5px;
+        font-size: 0.9rem;
+        color: #7d6450;
+      }
+
+      .position-info {
+        font-weight: bold;
+        margin-top: 5px;
+        color: #8b6f47;
+      }
+
+      .shelf-name-input {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        font-size: 1rem;
+        margin-bottom: 15px;
+      }
+
+      @media (max-width: 1024px) {
+        .layout-container {
+          grid-template-columns: 1fr;
+        }
+        
+        .left-panel {
+          order: 1;
+        }
+        
+        .right-panel {
+          order: 0;
+        }
+      }
+
+      @media (max-width: 768px) {
+        .heading-section h1 {
+          font-size: 2rem;
+        }
+        
+        .layout-container {
+          padding: 10px;
+          gap: 10px;
+        }
+        
+        .panel {
+          padding: 15px;
+        }
+        
+        .grid-cell {
+          min-height: 60px;
+        }
+      }
+      `}</style>
       </div>
     </>
   );
